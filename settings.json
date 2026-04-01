@@ -3,7 +3,11 @@
     "defaultMode": "bypassPermissions"
   },
   "skipDangerousModePermissionPrompt": true,
+  "model": "claude-opus-4-6",
+  "smallModel": "claude-sonnet-4-6",
   "env": {
-    "DISABLE_AUTOUPDATER": "1"
+    "DISABLE_AUTOUPDATER": "1",
+    "ANTHROPIC_BASE_URL": "https://replace-base.url",
+    "ANTHROPIC_API_KEY": "sk-xxxxxxxxxxxxxxxxxxxxxx"
   }
 }
