@@ -130,9 +130,15 @@ install_function() {
         cat > "$RC_FILE" << 'FISH_FUNC'
 # >>> ccbox >>>
 function ccbox --description "Run ccbox container"
-    set -l args run -it --rm \
-        -v (pwd):/workspace \
-        -v $HOME/.ccbox:/home/claude/.claude
+    set -l runtime
+    if command -q podman
+        set runtime podman
+    else if command -q docker
+        set runtime docker
+    else
+        echo "ccbox: docker or podman is required but not found." >&2
+        return 1
+    end
     set -l api_key "$ANTHROPIC_API_KEY"
     set -l base_url "$ANTHROPIC_BASE_URL"
     if test -z "$api_key"; and test -f "$HOME/.config/ccbox/auth.env"
@@ -149,13 +155,35 @@ function ccbox --description "Run ccbox container"
             end
         end < "$HOME/.config/ccbox/auth.env"
     end
+    if test (count $argv) -ge 1; and test "$argv[1]" = "stop"
+        $runtime stop ($runtime ps -q --filter ancestor=ccbox:latest) 2>/dev/null
+        echo "ccbox stopped."
+        return
+    end
+    if test (count $argv) -ge 1; and test "$argv[1]" = "web"
+        set -e argv[1]
+        set -l port 8080
+        if test (count $argv) -ge 1; and string match -qr '^\d+$' -- $argv[1]
+            set port $argv[1]
+            set -e argv[1]
+        end
+        set -l args run --rm -p "$port:8080" \
+            -v (pwd):/workspace \
+            -v $HOME/.ccbox:/home/claude/.claude
+        test -n "$api_key";  and set -a args -e "ANTHROPIC_API_KEY=$api_key"
+        test -n "$base_url"; and set -a args -e "ANTHROPIC_BASE_URL=$base_url"
+        $runtime $args ccbox:latest web $argv
+        return
+    end
+    set -l args run -it --rm \
+        -v (pwd):/workspace \
+        -v $HOME/.ccbox:/home/claude/.claude
     test -n "$api_key";  and set -a args -e "ANTHROPIC_API_KEY=$api_key"
     test -n "$base_url"; and set -a args -e "ANTHROPIC_BASE_URL=$base_url"
-    RUNTIME_PLACEHOLDER $args ccbox:latest $argv
+    $runtime $args ccbox:latest $argv
 end
 # <<< ccbox <<<
 FISH_FUNC
-        sed_inplace "s/RUNTIME_PLACEHOLDER/$RUNTIME/g" "$RC_FILE"
         return
     fi
 
@@ -164,30 +192,60 @@ FISH_FUNC
         sed_inplace '/# >>> ccbox >>>/,/# <<< ccbox <<</d' "$RC_FILE"
     fi
 
-    cat >> "$RC_FILE" << SHELL_FUNC
+    cat >> "$RC_FILE" << 'SHELL_FUNC'
 
 # >>> ccbox >>>
 ccbox() {
-    local args=(run -it --rm
-        -v "\$(pwd)":/workspace
-        -v "\$HOME/.ccbox":/home/claude/.claude
-    )
-    local base_url="\${ANTHROPIC_BASE_URL:-}"
-    local api_key="\${ANTHROPIC_API_KEY:-}"
-    if [ -z "\$api_key" ] && [ -f "\$HOME/.config/ccbox/auth.env" ]; then
-        while read -r line; do
-            [[ -z "\$line" || "\$line" =~ ^# ]] && continue
-            local key="\${line%%=*}"
-            local value="\${line#*=}"
-            case "\$key" in
-                ANTHROPIC_API_KEY)  api_key="\$value" ;;
-                ANTHROPIC_BASE_URL) base_url="\$value" ;;
-            esac
-        done < "\$HOME/.config/ccbox/auth.env"
+    local runtime
+    if command -v podman &>/dev/null; then
+        runtime=podman
+    elif command -v docker &>/dev/null; then
+        runtime=docker
+    else
+        echo "ccbox: docker or podman is required but not found." >&2
+        return 1
     fi
-    [ -n "\$api_key" ]  && args+=(-e "ANTHROPIC_API_KEY=\$api_key")
-    [ -n "\$base_url" ] && args+=(-e "ANTHROPIC_BASE_URL=\$base_url")
-    $RUNTIME "\${args[@]}" ccbox:latest "\$@"
+    local base_url="${ANTHROPIC_BASE_URL:-}"
+    local api_key="${ANTHROPIC_API_KEY:-}"
+    if [ -z "$api_key" ] && [ -f "$HOME/.config/ccbox/auth.env" ]; then
+        while read -r line; do
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            local key="${line%%=*}"
+            local value="${line#*=}"
+            case "$key" in
+                ANTHROPIC_API_KEY)  api_key="$value" ;;
+                ANTHROPIC_BASE_URL) base_url="$value" ;;
+            esac
+        done < "$HOME/.config/ccbox/auth.env"
+    fi
+    if [ "$1" = "stop" ]; then
+        "$runtime" stop "$("$runtime" ps -q --filter ancestor=ccbox:latest)" 2>/dev/null
+        echo "ccbox stopped."
+        return
+    fi
+    if [ "$1" = "web" ]; then
+        shift
+        local port=8080
+        if [ $# -gt 0 ] && [[ "$1" =~ ^[0-9]+$ ]]; then
+            port="$1"
+            shift
+        fi
+        local args=(run --rm -p "$port:8080"
+            -v "$(pwd)":/workspace
+            -v "$HOME/.ccbox":/home/claude/.claude
+        )
+        [ -n "$api_key" ]  && args+=(-e "ANTHROPIC_API_KEY=$api_key")
+        [ -n "$base_url" ] && args+=(-e "ANTHROPIC_BASE_URL=$base_url")
+        "$runtime" "${args[@]}" ccbox:latest web "$@"
+        return
+    fi
+    local args=(run -it --rm
+        -v "$(pwd)":/workspace
+        -v "$HOME/.ccbox":/home/claude/.claude
+    )
+    [ -n "$api_key" ]  && args+=(-e "ANTHROPIC_API_KEY=$api_key")
+    [ -n "$base_url" ] && args+=(-e "ANTHROPIC_BASE_URL=$base_url")
+    "$runtime" "${args[@]}" ccbox:latest "$@"
 }
 # <<< ccbox <<<
 SHELL_FUNC
@@ -259,19 +317,26 @@ do_already_installed() {
     info "ccbox is already set up."
     info "Auth: $(auth_label)"
     info ""
-    info "  1) Change how I log in"
-    info "  2) Remove ccbox"
+    info "  1) Update ccbox command"
+    info "  2) Change how I log in"
+    info "  3) Remove ccbox"
     info ""
     prompt "> "
 
     case "$REPLY" in
         1)
+            install_function
+            info ""
+            info "ccbox command updated. Close this terminal and open a new one."
+            ;;
+        2)
             configure_auth
+            install_function
             info ""
             info "Done! Close this terminal, open a new one, then run: ccbox"
             [ -n "${AUTH_HINT:-}" ] && info "$AUTH_HINT"
             ;;
-        2)
+        3)
             do_uninstall
             ;;
         *)

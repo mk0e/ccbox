@@ -1,0 +1,24 @@
+{
+  "workbench.startupEditor": "none",
+  "workbench.activityBar.location": "default",
+  "workbench.sideBar.location": "left",
+  "workbench.statusBar.visible": false,
+  "workbench.layoutControl.enabled": false,
+  "window.menuBarVisibility": "compact",
+  "window.commandCenter": false,
+  "explorer.openEditors.visible": 0,
+  "files.exclude": {
+    "**/.ccbox": true,
+    "**/.claude": true,
+    "**/.git": true,
+    "**/.gitignore": true,
+    "**/.dockerignore": true
+  },
+  "editor.minimap.enabled": false,
+  "editor.renderWhitespace": "none",
+  "breadcrumbs.enabled": false,
+  "terminal.integrated.defaultLocation": "view",
+  "chat.commandCenter.enabled": false,
+  "claudeCode.allowDangerouslySkipPermissions": true,
+  "claudeCode.initialPermissionMode": "bypassPermissions"
+}

@@ -1,0 +1,22 @@
+{
+  "name": "ccbox-welcome",
+  "displayName": "ccbox Welcome",
+  "description": "Welcome page for ccbox",
+  "version": "0.1.0",
+  "publisher": "ccbox",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ccbox.welcome",
+        "title": "ccbox: Welcome"
+      }
+    ]
+  }
+}
