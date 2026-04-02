@@ -57,6 +57,18 @@ ccbox claude --resume <session-id>
 ccbox claude --print "Create a PDF report summarizing Q1 sales"
 ```
 
+## Web UI (code-server)
+
+Run Claude Code and VS Code in your browser:
+
+```bash
+ccbox web
+```
+
+Then open http://localhost:8080 in your browser. Authentication is disabled; the workspace directory is mounted at `/workspace`.
+
+> **Note:** Do not expose port 8080 to untrusted networks. Anyone who can reach that port will have full access to the workspace.
+
 ## What's inside
 
 ### Built-in Skills

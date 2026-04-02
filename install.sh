@@ -133,6 +133,9 @@ function ccbox --description "Run ccbox container"
     set -l args run -it --rm \
         -v (pwd):/workspace \
         -v $HOME/.ccbox:/home/claude/.claude
+    if test "$argv[1]" = "web"
+        set -a args -p 8080:8080
+    end
     set -l api_key "$ANTHROPIC_API_KEY"
     set -l base_url "$ANTHROPIC_BASE_URL"
     if test -z "$api_key"; and test -f "$HOME/.config/ccbox/auth.env"
@@ -172,6 +175,7 @@ ccbox() {
         -v "\$(pwd)":/workspace
         -v "\$HOME/.ccbox":/home/claude/.claude
     )
+    [ "\${1:-}" = "web" ] && args+=(-p 8080:8080)
     local base_url="\${ANTHROPIC_BASE_URL:-}"
     local api_key="\${ANTHROPIC_API_KEY:-}"
     if [ -z "\$api_key" ] && [ -f "\$HOME/.config/ccbox/auth.env" ]; then

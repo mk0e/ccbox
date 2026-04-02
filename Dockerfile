@@ -79,6 +79,12 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
     && cp /root/.local/bin/claude /usr/local/bin/claude \
     && cp -r /root/.local/share/claude /usr/local/share/claude
 
+# ---------- code-server (web UI) ----------
+RUN curl -fsSL https://code-server.dev/install.sh | sh && \
+    npm install --prefix /usr/lib/code-server/lib/vscode \
+        @xterm/addon-ligatures && \
+    npm cache clean --force
+
 # ---------- Node packages (global) ----------
 RUN npm i -g \
     pptxgenjs \
