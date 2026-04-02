@@ -1,0 +1,55 @@
+# ==============================================================================
+# ci.yml — Quality-gate workflow for PRs and pushes to main
+#
+# Jobs:
+#   • lint-dockerfile  — runs hadolint (config: .hadolint.yaml)
+#   • build-check      — verifies the Docker image builds without errors
+# ==============================================================================
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  lint-dockerfile:
+    name: Lint Dockerfile
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Lint Dockerfile with hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          # .hadolint.yaml in the repository root carries the ignore list.
+
+  build-check:
+    name: Build Docker image (smoke test)
+    runs-on: ubuntu-latest
+    needs: lint-dockerfile
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: ccbox:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
