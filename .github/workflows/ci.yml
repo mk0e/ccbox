@@ -6,7 +6,7 @@
 #   • Push to `main`                    → lint + build check (no push)
 #
 # Steps
-#   1. hadolint   — Dockerfile best-practices linter
+#   1. hadolint   — Dockerfile best-practices linter (config: .hadolint.yaml)
 #   2. docker build (amd64 only, no push) — validates the image actually builds
 #
 # These checks must pass before a PR can be merged (configure branch

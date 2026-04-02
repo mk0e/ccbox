@@ -1,0 +1,13 @@
+# hadolint configuration
+# https://github.com/hadolint/hadolint#configure
+
+ignore:
+  # DL3007: Using `latest` tag — intentional for nightly builds; revisit if
+  # stricter pinning is adopted.
+  - DL3007
+  # DL3008: apt-get package version pinning — acceptable for now.
+  - DL3008
+  # DL3013: pip package version pinning — acceptable for now.
+  - DL3013
+  # DL4006: SHELL pipefail — acceptable for now.
+  - DL4006
