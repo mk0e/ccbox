@@ -1,9 +1,16 @@
 # ==============================================================================
-# ci.yml — Quality-gate workflow for PRs and pushes to main
+# ci.yml — Quality gate for pull requests and pushes to main
 #
-# Jobs:
-#   • lint-dockerfile  — runs hadolint (config: .hadolint.yaml)
-#   • build-check      — verifies the Docker image builds without errors
+# Triggers
+#   • Pull request (any branch → main)  → lint + build check (no push)
+#   • Push to `main`                    → lint + build check (no push)
+#
+# Steps
+#   1. hadolint   — Dockerfile best-practices linter (config: .hadolint.yaml)
+#   2. docker build (amd64 only, no push) — validates the image actually builds
+#
+# These checks must pass before a PR can be merged (configure branch
+# protection to require the "ci / build-check" status check).
 # ==============================================================================
 
 name: CI
@@ -15,12 +22,11 @@ on:
   pull_request:
 
 jobs:
-  lint-dockerfile:
+  lint:
     name: Lint Dockerfile
     runs-on: ubuntu-latest
     permissions:
       contents: read
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,12 +35,11 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
-          # .hadolint.yaml in the repository root carries the ignore list.
 
   build-check:
-    name: Build Docker image (smoke test)
+    name: Build image (no push)
     runs-on: ubuntu-latest
-    needs: lint-dockerfile
+    needs: lint
     permissions:
       contents: read
 
@@ -45,11 +50,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image (no push)
+      - name: Build image
         uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: linux/amd64
           push: false
-          tags: ccbox:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
