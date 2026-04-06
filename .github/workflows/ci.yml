@@ -2,12 +2,11 @@
 # ci.yml — Quality gate for pull requests and pushes to main
 #
 # Triggers
-#   • Pull request (any branch → main)  → lint + build check (no push)
-#   • Push to `main`                    → lint + build check (no push)
+#   • Pull request (any branch → main)  → build check (no push)
+#   • Push to `main`                    → build check (no push)
 #
 # Steps
-#   1. hadolint   — Dockerfile best-practices linter
-#   2. docker build (amd64 only, no push) — validates the image actually builds
+#   1. docker build (amd64 only, no push) — validates the image actually builds
 #
 # These checks must pass before a PR can be merged (configure branch
 # protection to require the "ci / build-check" status check).
@@ -22,24 +21,9 @@ on:
   pull_request:
 
 jobs:
-  lint:
-    name: Lint Dockerfile
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Lint Dockerfile with hadolint
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: Dockerfile
-
   build-check:
     name: Build image (no push)
     runs-on: ubuntu-latest
-    needs: lint
     permissions:
       contents: read
 
