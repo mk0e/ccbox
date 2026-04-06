@@ -6,7 +6,7 @@
 #   • Nightly schedule (02:00 UTC)  → same as above (keeps `latest` fresh)
 #   • New release / tag (v*)        → also pushes a versioned tag (e.g. v1.2.3)
 #
-# Architectures: linux/amd64  linux/arm/v7  linux/arm64
+# Architectures: linux/amd64  linux/arm64
 #
 # Registry: ghcr.io/mk0e/ccbox
 #
@@ -79,7 +79,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm/v7,linux/arm64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
