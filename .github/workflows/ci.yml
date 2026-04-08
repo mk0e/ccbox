@@ -1,0 +1,44 @@
+# ==============================================================================
+# ci.yml — Quality gate for pull requests and pushes to main
+#
+# Triggers
+#   • Pull request (any branch → main)  → build check (no push)
+#   • Push to `main`                    → build check (no push)
+#
+# Steps
+#   1. docker build (amd64 only, no push) — validates the image actually builds
+#
+# These checks must pass before a PR can be merged (configure branch
+# protection to require the "ci / build-check" status check).
+# ==============================================================================
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-check:
+    name: Build image (no push)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -162,10 +162,37 @@ Or add globally (available in all sessions):
 | `GIT_USER_NAME` | `Claude` | Git author name inside container |
 | `GIT_USER_EMAIL` | `claude@ccbox` | Git author email inside container |
 
-## Requirements
+## Docker image
 
-- Docker or Podman
-- An Anthropic API key or Claude account (Pro, Team, or Enterprise)
+Pre-built multi-arch images are published to the GitHub Container Registry:
+
+```
+ghcr.io/mk0e/ccbox:latest          # latest stable build
+ghcr.io/mk0e/ccbox:v1.2.3          # specific release
+```
+
+### Supported architectures
+
+| Architecture | Tag suffix |
+|---|---|
+| `linux/amd64` | *(default)* |
+| `linux/arm64` | *(auto-selected)* |
+| `linux/arm/v7` | *(auto-selected)* |
+| `linux/arm/v6` | *(auto-selected)* |
+
+Docker pulls the correct variant automatically based on the host platform.
+
+### Build pipeline
+
+The image is built and pushed automatically by the [Build & Push workflow](.github/workflows/docker-build.yml):
+
+| Trigger | Tags pushed |
+|---|---|
+| Push to `main` | `latest` |
+| Nightly schedule (02:00 UTC) | `latest` |
+| New GitHub release (e.g. `v1.2.3`) | `v1.2.3`, `1.2.3`, `latest` |
+
+Builds use Docker Buildx with QEMU emulation and GitHub Actions layer caching for faster incremental builds.
 
 ## License
 
