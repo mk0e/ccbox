@@ -22,6 +22,12 @@ prompt() {
     read -r REPLY < /dev/tty
 }
 
+prompt_secret() {
+    printf "%s" "$1" > /dev/tty
+    read -rs REPLY < /dev/tty
+    printf "\n" > /dev/tty
+}
+
 info() { printf "%s\n" "$1" > /dev/tty; }
 
 # ---------- Container runtime ----------
@@ -131,10 +137,10 @@ install_function() {
 # >>> ccbox >>>
 function ccbox --description "Run ccbox container"
     set -l runtime
-    if command -q podman
-        set runtime podman
-    else if command -q docker
+    if command -q docker
         set runtime docker
+    else if command -q podman
+        set runtime podman
     else
         echo "ccbox: docker or podman is required but not found." >&2
         return 1
@@ -156,8 +162,13 @@ function ccbox --description "Run ccbox container"
         end < "$HOME/.config/ccbox/auth.env"
     end
     if test (count $argv) -ge 1; and test "$argv[1]" = "stop"
-        $runtime stop ($runtime ps -q --filter ancestor=ccbox:latest) 2>/dev/null
-        echo "ccbox stopped."
+        set -l cids ($runtime ps -q --filter ancestor=ccbox:latest 2>/dev/null)
+        if test -n "$cids"
+            $runtime stop $cids >/dev/null 2>&1
+            echo "ccbox stopped."
+        else
+            echo "No running ccbox containers found."
+        end
         return
     end
     if test (count $argv) -ge 1; and test "$argv[1]" = "web"
@@ -167,11 +178,18 @@ function ccbox --description "Run ccbox container"
             set port $argv[1]
             set -e argv[1]
         end
-        set -l args run --rm -p "$port:8080" \
+        set -l existing ($runtime ps -q --filter ancestor=ccbox:latest 2>/dev/null)
+        if test -n "$existing"
+            echo "ccbox is already running. Open http://localhost:$port or run: ccbox stop"
+            return
+        end
+        set -l args run --rm -p "127.0.0.1:$port:8080" \
             -v (pwd):/workspace \
             -v $HOME/.ccbox:/home/claude/.claude
         test -n "$api_key";  and set -a args -e "ANTHROPIC_API_KEY=$api_key"
         test -n "$base_url"; and set -a args -e "ANTHROPIC_BASE_URL=$base_url"
+        echo "ccbox is running at http://localhost:$port"
+        echo "Press Ctrl+C to stop."
         $runtime $args ccbox:latest web $argv
         return
     end
@@ -197,10 +215,10 @@ FISH_FUNC
 # >>> ccbox >>>
 ccbox() {
     local runtime
-    if command -v podman &>/dev/null; then
-        runtime=podman
-    elif command -v docker &>/dev/null; then
+    if command -v docker &>/dev/null; then
         runtime=docker
+    elif command -v podman &>/dev/null; then
+        runtime=podman
     else
         echo "ccbox: docker or podman is required but not found." >&2
         return 1
@@ -219,8 +237,14 @@ ccbox() {
         done < "$HOME/.config/ccbox/auth.env"
     fi
     if [ "$1" = "stop" ]; then
-        "$runtime" stop "$("$runtime" ps -q --filter ancestor=ccbox:latest)" 2>/dev/null
-        echo "ccbox stopped."
+        local cids
+        cids="$("$runtime" ps -q --filter ancestor=ccbox:latest 2>/dev/null)"
+        if [ -n "$cids" ]; then
+            "$runtime" stop $cids >/dev/null 2>&1
+            echo "ccbox stopped."
+        else
+            echo "No running ccbox containers found."
+        fi
         return
     fi
     if [ "$1" = "web" ]; then
@@ -230,12 +254,20 @@ ccbox() {
             port="$1"
             shift
         fi
-        local args=(run --rm -p "$port:8080"
+        local existing
+        existing="$("$runtime" ps -q --filter ancestor=ccbox:latest 2>/dev/null)"
+        if [ -n "$existing" ]; then
+            echo "ccbox is already running. Open http://localhost:$port or run: ccbox stop"
+            return
+        fi
+        local args=(run --rm -p "127.0.0.1:$port:8080"
             -v "$(pwd)":/workspace
             -v "$HOME/.ccbox":/home/claude/.claude
         )
         [ -n "$api_key" ]  && args+=(-e "ANTHROPIC_API_KEY=$api_key")
         [ -n "$base_url" ] && args+=(-e "ANTHROPIC_BASE_URL=$base_url")
+        echo "ccbox is running at http://localhost:$port"
+        echo "Press Ctrl+C to stop."
         "$runtime" "${args[@]}" ccbox:latest web "$@"
         return
     fi
@@ -275,7 +307,7 @@ configure_auth() {
     case "$REPLY" in
         1)
             info ""
-            prompt "API key: "
+            prompt_secret "API key: "
             local api_key="$REPLY"
             if [ -z "$api_key" ]; then
                 info "No API key entered. Aborted."

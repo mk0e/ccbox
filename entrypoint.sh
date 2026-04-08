@@ -61,7 +61,7 @@ if [ "$1" = "web" ]; then
     cp /opt/ccbox/code-server-settings.json "$CS_SETTINGS"
     # Inject API key and base URL into VS Code settings for the Claude Code extension
     if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-        CLAUDE_HOME="$CLAUDE_HOME" python3 << 'PYEOF'
+        if ! CLAUDE_HOME="$CLAUDE_HOME" python3 << 'PYEOF'
 import json, os
 settings_path = os.environ["CLAUDE_HOME"] + "/.local/share/code-server/User/settings.json"
 with open(settings_path) as f:
@@ -74,6 +74,9 @@ settings["claudeCode.environmentVariables"] = env_vars
 with open(settings_path, "w") as f:
     json.dump(settings, f, indent=2)
 PYEOF
+        then
+            echo "[ccbox] Warning: failed to inject API key into VS Code settings"
+        fi
     fi
     # Copy baked-in extensions to writable location
     if [ ! -d "$CS_EXTENSIONS" ]; then
@@ -81,7 +84,7 @@ PYEOF
     fi
     chown -R "$PUID:$PGID" "$CS_DATA"
 
-    echo "[ccbox] Web UI running at http://localhost:8080"
+    echo "[ccbox] Starting web UI..."
     export HOME="$CLAUDE_HOME"
     cd /workspace
     exec sudo -u claude \
