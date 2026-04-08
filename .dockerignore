@@ -6,3 +6,4 @@ docs
 test-*
 data
 workspace
+**/.DS_Store

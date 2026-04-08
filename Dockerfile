@@ -66,6 +66,7 @@ RUN pip install --no-cache-dir --break-system-packages \
     python-docx \
     lxml \
     defusedxml \
+    matplotlib \
     "markitdown[pptx]"
 
 # ---------- Rename node user to claude ----------
@@ -77,7 +78,9 @@ RUN usermod -l claude -d /home/claude -m node && \
 # ---------- Claude Code CLI ----------
 RUN curl -fsSL https://claude.ai/install.sh | bash \
     && cp /root/.local/bin/claude /usr/local/bin/claude \
-    && cp -r /root/.local/share/claude /usr/local/share/claude
+    && cp -r /root/.local/share/claude /usr/local/share/claude \
+    && mkdir -p /home/claude/.local/bin \
+    && ln -sf /usr/local/bin/claude /home/claude/.local/bin/claude
 
 # ---------- Node packages (global) ----------
 RUN npm i -g \
@@ -111,9 +114,25 @@ COPY --from=skills /tmp/skills/skills/canvas-design  /opt/ccbox/skills/canvas-de
 COPY --from=skills /tmp/skills/skills/brand-guidelines /opt/ccbox/skills/brand-guidelines
 COPY --from=skills /tmp/skills/skills/skill-creator  /opt/ccbox/skills/skill-creator
 
+# ---------- code-server ----------
+RUN curl -fsSL https://code-server.dev/install.sh | sh
+
+# ---------- VS Code extensions (via code-server) ----------
+RUN code-server --extensions-dir /opt/ccbox/code-server-extensions \
+    --install-extension Anthropic.claude-code \
+    --install-extension cweijan.vscode-office
+
+# ---------- ccbox welcome extension ----------
+COPY welcome-extension /tmp/welcome-extension
+RUN cd /tmp/welcome-extension && npx --yes @vscode/vsce package --allow-missing-repository -o /tmp/ccbox-welcome.vsix \
+    && code-server --extensions-dir /opt/ccbox/code-server-extensions --install-extension /tmp/ccbox-welcome.vsix \
+    && rm -rf /tmp/welcome-extension /tmp/ccbox-welcome.vsix
+RUN chmod -R a+rX /opt/ccbox/code-server-extensions
+
 # ---------- Copy config ----------
 COPY CLAUDE.md     /opt/ccbox/CLAUDE.md
 COPY settings.json /opt/ccbox/settings.json
+COPY code-server-settings.json /opt/ccbox/code-server-settings.json
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
@@ -123,9 +142,10 @@ RUN libreoffice --version && \
     qpdf --version && \
     pandoc --version && \
     pdftk --version && \
-    python3 -c "import pypdf, pdfplumber, reportlab, pypdfium2, pytesseract, pdf2image, pandas, openpyxl, PIL, pptx, docx, lxml, defusedxml, markitdown" && \
+    python3 -c "import pypdf, pdfplumber, reportlab, pypdfium2, pytesseract, pdf2image, pandas, openpyxl, PIL, pptx, docx, lxml, defusedxml, markitdown, matplotlib" && \
     node -e "require('pptxgenjs'); require('pdf-lib'); require('docx'); require('sharp'); require('react'); require('react-dom')" && \
-    claude --version
+    claude --version && \
+    code-server --version
 
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

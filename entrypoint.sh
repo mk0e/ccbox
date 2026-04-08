@@ -51,6 +51,52 @@ if [ ! -L "$CLAUDE_HOME/.claude.json" ]; then
     chown "$PUID:$PGID" "$CLAUDE_HOME/.claude/.claude.json"
 fi
 
+# ---------- code-server first-boot setup ----------
+if [ "$1" = "web" ]; then
+    CS_DATA="$CLAUDE_HOME/.local/share/code-server"
+    CS_EXTENSIONS="$CS_DATA/extensions"
+    CS_SETTINGS="$CS_DATA/User/settings.json"
+    mkdir -p "$(dirname "$CS_SETTINGS")"
+    # Always regenerate settings to inject current env vars
+    cp /opt/ccbox/code-server-settings.json "$CS_SETTINGS"
+    # Inject API key and base URL into VS Code settings for the Claude Code extension
+    if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+        if ! CLAUDE_HOME="$CLAUDE_HOME" python3 << 'PYEOF'
+import json, os
+settings_path = os.environ["CLAUDE_HOME"] + "/.local/share/code-server/User/settings.json"
+with open(settings_path) as f:
+    settings = json.load(f)
+env_vars = [{"name": "ANTHROPIC_API_KEY", "value": os.environ["ANTHROPIC_API_KEY"]}]
+base_url = os.environ.get("ANTHROPIC_BASE_URL", "")
+if base_url:
+    env_vars.append({"name": "ANTHROPIC_BASE_URL", "value": base_url})
+settings["claudeCode.environmentVariables"] = env_vars
+with open(settings_path, "w") as f:
+    json.dump(settings, f, indent=2)
+PYEOF
+        then
+            echo "[ccbox] Warning: failed to inject API key into VS Code settings"
+        fi
+    fi
+    # Copy baked-in extensions to writable location
+    if [ ! -d "$CS_EXTENSIONS" ]; then
+        cp -r /opt/ccbox/code-server-extensions "$CS_EXTENSIONS"
+    fi
+    chown -R "$PUID:$PGID" "$CS_DATA"
+
+    echo "[ccbox] Starting web UI..."
+    export HOME="$CLAUDE_HOME"
+    cd /workspace
+    exec sudo -u claude \
+        --preserve-env=HOME,PATH,NODE_PATH,NODE_OPTIONS,ANTHROPIC_API_KEY,ANTHROPIC_BASE_URL,CLAUDE_CODE_USE_BEDROCK,AWS_PROFILE,AWS_REGION,CLAUDE_CODE_USE_VERTEX,GOOGLE_CLOUD_PROJECT \
+        code-server \
+        --bind-addr 0.0.0.0:8080 \
+        --auth none \
+        --disable-telemetry \
+        --extensions-dir "$CS_DATA/extensions" \
+        /workspace
+fi
+
 # ---------- Exec as claude user ----------
 export HOME="$CLAUDE_HOME"
 cd /workspace
