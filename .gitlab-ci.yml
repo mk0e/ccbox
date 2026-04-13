@@ -1,7 +1,6 @@
 stages:
   - validate
   - publish
-  - update-gist
 
 # ------------------------------------------------------------------------------
 # build-check — validates the Dockerfile builds (no push)
@@ -54,20 +53,3 @@ build-and-push:
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_COMMIT_TAG =~ /^v/
-
-update-gist:
-  stage: update-gist
-  image: alpine:latest
-  script:
-    - apk add --no-cache curl jq
-    - |
-      CONTENT=$(jq -Rs '.' install.sh)
-      curl -s -X PATCH \
-        -H "Authorization: token $GITHUB_TOKEN" \
-        -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/gists/$GIST_ID" \
-        -d "{\"files\":{\"install.sh\":{\"content\":$CONTENT}}}"
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      changes:
-        - install.sh
