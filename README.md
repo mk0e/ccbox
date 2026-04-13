@@ -9,7 +9,7 @@ ccbox runs [Claude Code](https://docs.anthropic.com/en/docs/claude-code) inside 
 **Install:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/mk0e/ccbox/main/install.sh | bash
+curl -fsSL https://unitedunicorns.org/gitlab/techboard/ccbox/-/raw/main/install.sh | bash
 ```
 
 The installer sets up the `ccbox` command and walks you through authentication. You'll need Docker (or Podman) running.
@@ -140,6 +140,12 @@ Run the installer again to update the command, change auth, or uninstall:
 ./install.sh
 ```
 
+To build the image locally from source instead of pulling from the registry (requires a repo checkout):
+
+```bash
+./install.sh --build
+```
+
 ## Custom skills
 
 Add project-specific skills:
@@ -177,14 +183,14 @@ ghcr.io/mk0e/ccbox:v1.2.3          # specific release
 |---|---|
 | `linux/amd64` | *(default)* |
 | `linux/arm64` | *(auto-selected)* |
-| `linux/arm/v7` | *(auto-selected)* |
-| `linux/arm/v6` | *(auto-selected)* |
 
 Docker pulls the correct variant automatically based on the host platform.
 
 ### Build pipeline
 
-The image is built and pushed automatically by the [Build & Push workflow](.github/workflows/docker-build.yml):
+The image is built and pushed automatically on both GitHub and GitLab:
+
+**GitHub** ([Build & Push workflow](.github/workflows/docker-build.yml)):
 
 | Trigger | Tags pushed |
 |---|---|
@@ -192,7 +198,15 @@ The image is built and pushed automatically by the [Build & Push workflow](.gith
 | Nightly schedule (02:00 UTC) | `latest` |
 | New GitHub release (e.g. `v1.2.3`) | `v1.2.3`, `1.2.3`, `latest` |
 
-Builds use Docker Buildx with QEMU emulation and GitHub Actions layer caching for faster incremental builds.
+**GitLab** ([`.gitlab-ci.yml`](.gitlab-ci.yml)):
+
+| Trigger | Tags pushed |
+|---|---|
+| Push to `main` | `latest` |
+| Scheduled pipeline | `latest` |
+| New tag (e.g. `v1.2.3`) | `v1.2.3`, `latest` |
+
+Builds use Docker Buildx with QEMU emulation for faster incremental builds.
 
 ## License
 

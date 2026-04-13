@@ -8,12 +8,21 @@ set -e
 #
 # Usage:
 #   ./install.sh
-#   curl -fsSL https://raw.githubusercontent.com/mk0e/ccbox/main/install.sh | bash
+#   curl -fsSL https://unitedunicorns.org/gitlab/techboard/ccbox/-/raw/main/install.sh | bash
 # ==============================================================================
 
 CCBOX_DATA="$HOME/.ccbox"
 CCBOX_CONFIG="$HOME/.config/ccbox"
 AUTH_ENV="$CCBOX_CONFIG/auth.env"
+
+# ---------- Arg parsing ----------
+BUILD_LOCAL=false
+for arg in "$@"; do
+    case "$arg" in
+        --build) BUILD_LOCAL=true ;;
+        *) printf "Unknown option: %s\n" "$arg" >&2; exit 1 ;;
+    esac
+done
 
 # ---------- Terminal I/O ----------
 # Read from /dev/tty so prompts work even when piped via curl | bash
@@ -162,7 +171,7 @@ function ccbox --description "Run ccbox container"
         end < "$HOME/.config/ccbox/auth.env"
     end
     if test (count $argv) -ge 1; and test "$argv[1]" = "stop"
-        set -l cids ($runtime ps -q --filter ancestor=ccbox:latest 2>/dev/null)
+        set -l cids ($runtime ps -q --filter ancestor=ghcr.io/mk0e/ccbox:latest 2>/dev/null)
         if test -n "$cids"
             $runtime stop $cids >/dev/null 2>&1
             echo "ccbox stopped."
@@ -178,7 +187,7 @@ function ccbox --description "Run ccbox container"
             set port $argv[1]
             set -e argv[1]
         end
-        set -l existing ($runtime ps -q --filter ancestor=ccbox:latest 2>/dev/null)
+        set -l existing ($runtime ps -q --filter ancestor=ghcr.io/mk0e/ccbox:latest 2>/dev/null)
         if test -n "$existing"
             echo "ccbox is already running. Open http://localhost:$port or run: ccbox stop"
             return
@@ -190,7 +199,7 @@ function ccbox --description "Run ccbox container"
         test -n "$base_url"; and set -a args -e "ANTHROPIC_BASE_URL=$base_url"
         echo "ccbox is running at http://localhost:$port"
         echo "Press Ctrl+C to stop."
-        $runtime $args ccbox:latest web $argv
+        $runtime $args ghcr.io/mk0e/ccbox:latest web $argv
         return
     end
     set -l args run -it --rm \
@@ -198,7 +207,7 @@ function ccbox --description "Run ccbox container"
         -v $HOME/.ccbox:/home/claude/.claude
     test -n "$api_key";  and set -a args -e "ANTHROPIC_API_KEY=$api_key"
     test -n "$base_url"; and set -a args -e "ANTHROPIC_BASE_URL=$base_url"
-    $runtime $args ccbox:latest $argv
+    $runtime $args ghcr.io/mk0e/ccbox:latest $argv
 end
 # <<< ccbox <<<
 FISH_FUNC
@@ -238,7 +247,7 @@ ccbox() {
     fi
     if [ "$1" = "stop" ]; then
         local cids
-        cids="$("$runtime" ps -q --filter ancestor=ccbox:latest 2>/dev/null)"
+        cids="$("$runtime" ps -q --filter ancestor=ghcr.io/mk0e/ccbox:latest 2>/dev/null)"
         if [ -n "$cids" ]; then
             "$runtime" stop $cids >/dev/null 2>&1
             echo "ccbox stopped."
@@ -255,7 +264,7 @@ ccbox() {
             shift
         fi
         local existing
-        existing="$("$runtime" ps -q --filter ancestor=ccbox:latest 2>/dev/null)"
+        existing="$("$runtime" ps -q --filter ancestor=ghcr.io/mk0e/ccbox:latest 2>/dev/null)"
         if [ -n "$existing" ]; then
             echo "ccbox is already running. Open http://localhost:$port or run: ccbox stop"
             return
@@ -268,7 +277,7 @@ ccbox() {
         [ -n "$base_url" ] && args+=(-e "ANTHROPIC_BASE_URL=$base_url")
         echo "ccbox is running at http://localhost:$port"
         echo "Press Ctrl+C to stop."
-        "$runtime" "${args[@]}" ccbox:latest web "$@"
+        "$runtime" "${args[@]}" ghcr.io/mk0e/ccbox:latest web "$@"
         return
     fi
     local args=(run -it --rm
@@ -277,7 +286,7 @@ ccbox() {
     )
     [ -n "$api_key" ]  && args+=(-e "ANTHROPIC_API_KEY=$api_key")
     [ -n "$base_url" ] && args+=(-e "ANTHROPIC_BASE_URL=$base_url")
-    "$runtime" "${args[@]}" ccbox:latest "$@"
+    "$runtime" "${args[@]}" ghcr.io/mk0e/ccbox:latest "$@"
 }
 # <<< ccbox <<<
 SHELL_FUNC
@@ -327,6 +336,19 @@ configure_auth() {
             exit 1
             ;;
     esac
+}
+
+# ---------- Build local image ----------
+build_local_image() {
+    if [ ! -f "Dockerfile" ]; then
+        info ""
+        info "--build requires a Dockerfile in the current directory."
+        info "Run ./install.sh --build from the ccbox repo checkout."
+        exit 1
+    fi
+    info "Building ccbox image locally..."
+    "$RUNTIME" build -t ghcr.io/mk0e/ccbox:latest .
+    info "Build complete."
 }
 
 # ---------- Uninstall ----------
@@ -396,6 +418,8 @@ do_first_run() {
 
 detect_runtime
 detect_shell
+
+$BUILD_LOCAL && build_local_image
 
 is_installed=false
 if [ "$CURRENT_SHELL" = "fish" ]; then
