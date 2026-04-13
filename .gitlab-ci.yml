@@ -1,8 +1,32 @@
 stages:
-  - build
+  - validate
+  - publish
 
+# ------------------------------------------------------------------------------
+# build-check — validates the Dockerfile builds (no push)
+# Runs on every commit and merge request.
+# ------------------------------------------------------------------------------
+build-check:
+  stage: validate
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_BUILDKIT: "1"
+  script:
+    - docker buildx create --use --name check
+    - docker buildx build --platform linux/amd64 .
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+
+# ------------------------------------------------------------------------------
+# build-and-push — multi-arch build, pushes to ghcr.io
+# Runs on main branch pushes, scheduled pipelines, and version tags.
+# ------------------------------------------------------------------------------
 build-and-push:
-  stage: build
+  stage: publish
   image: docker:27
   services:
     - docker:27-dind
