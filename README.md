@@ -9,7 +9,7 @@ ccbox runs [Claude Code](https://docs.anthropic.com/en/docs/claude-code) inside 
 **Install:**
 
 ```bash
-curl -fsSL https://unitedunicorns.org/gitlab/techboard/ccbox/-/raw/main/install.sh | bash
+curl -fsSL https://github.com/mk0e/ccbox/blob/main/install.sh | bash
 ```
 
 The installer sets up the `ccbox` command and walks you through authentication. You'll need Docker (or Podman) running.
