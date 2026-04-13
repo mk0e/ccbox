@@ -66,7 +66,7 @@ update-gist:
         -H "Authorization: token $GITHUB_TOKEN" \
         -H "Accept: application/vnd.github+json" \
         "https://api.github.com/gists/$GIST_ID" \
-        -d "{\"files\":{\"install.sh\":{\"content\":$CONTENT}}}"
+        -d "{\"files\":{\"cc-box-install.sh\":{\"content\":$CONTENT}}}"
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       changes:
