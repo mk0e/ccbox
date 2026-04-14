@@ -235,6 +235,13 @@ function ccbox --description "Run ccbox container"
 end
 # <<< ccbox <<<
 FISH_FUNC
+        info ""
+        info "NOTE: the fish ccbox function is not yet variant-aware."
+        info "      It always runs ghcr.io/mk0e/ccbox:latest (the docs variant)."
+        info "      Multi-variant dispatch (including diy-news-collector) is"
+        info "      available today in bash and zsh. Fish support is a"
+        info "      tracked follow-up."
+        info ""
         return
     fi
 
@@ -267,10 +274,35 @@ ccbox() {
         registry_default="$(sed -n 's/.*"default": *"\([^"]*\)".*/\1/p' "$registry")"
     fi
 
+    # First arg disambiguation:
+    #   - known variant name          → consume as variant
+    #   - 'web' or 'stop'              → subcommand, don't consume
+    #   - starts with '-' or empty     → claude passthrough, don't consume
+    #   - anything else                → assume mistyped variant, error out
     local variant=""
-    if [ $# -gt 0 ] && [ -f "$variants_dir/$1.env" ]; then
-        variant="$1"
+    local first_arg="${1:-}"
+    if [ -n "$first_arg" ] && [ -f "$variants_dir/$first_arg.env" ]; then
+        variant="$first_arg"
         shift
+    elif [ -n "$first_arg" ] \
+         && [ "$first_arg" != "web" ] \
+         && [ "$first_arg" != "stop" ] \
+         && [ "${first_arg:0:1}" != "-" ]; then
+        echo "ccbox: variant '$first_arg' is not installed." >&2
+        if [ -d "$variants_dir" ]; then
+            local available=""
+            local envfile
+            for envfile in "$variants_dir"/*.env; do
+                [ -f "$envfile" ] || continue
+                available="$available  $(basename "${envfile%.env}")\n"
+            done
+            if [ -n "$available" ]; then
+                echo "Available variants:" >&2
+                printf "$available" >&2
+            fi
+        fi
+        echo "Install with: ./install.sh --add $first_arg" >&2
+        return 1
     fi
     if [ -z "$variant" ]; then
         variant="${registry_default:-docs}"
