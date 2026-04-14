@@ -22,7 +22,7 @@ build-check:
     - if: $CI_COMMIT_BRANCH
 
 # ------------------------------------------------------------------------------
-# build-and-push — multi-arch build, pushes to ghcr.io
+# build-and-push — multi-arch build, pushes to ghcr.io AND GitLab registry
 # Runs on main branch pushes, scheduled pipelines, and version tags.
 # ------------------------------------------------------------------------------
 build-and-push:
@@ -37,13 +37,14 @@ build-and-push:
     GITHUB_IMAGE: ghcr.io/mk0e/ccbox
   before_script:
     - echo "$GITHUB_TOKEN" | docker login $GITHUB_REGISTRY -u $GITHUB_USERNAME --password-stdin
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - docker buildx create --use --name multiarch
     - docker buildx inspect --bootstrap
   script:
     - |
-      TAGS="-t $GITHUB_IMAGE:latest"
+      TAGS="-t $GITHUB_IMAGE:latest -t $CI_REGISTRY_IMAGE:latest"
       if [ -n "$CI_COMMIT_TAG" ]; then
-        TAGS="$TAGS -t $GITHUB_IMAGE:$CI_COMMIT_TAG"
+        TAGS="$TAGS -t $GITHUB_IMAGE:$CI_COMMIT_TAG -t $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG"
       fi
     - docker buildx build
         --platform linux/amd64,linux/arm64
