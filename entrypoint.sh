@@ -9,6 +9,12 @@ CLAUDE_HOME="/home/claude"
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
+# ---------- Helpers ----------
+# chown can fail on bind-mounted paths in rootless Podman or when the host
+# filesystem (virtiofs/9p on macOS/Windows) doesn't support ownership changes.
+# Try it, but don't abort — we verify writability afterward.
+try_chown() { chown "$@" 2>/dev/null || true; }
+
 # ---------- UID/GID remapping ----------
 if [ "$(id -u claude)" != "$PUID" ] || [ "$(id -g claude)" != "$PGID" ]; then
     groupmod -o -g "$PGID" claude 2>/dev/null || true
@@ -17,7 +23,9 @@ fi
 
 # ---------- Ensure directories ----------
 mkdir -p "$CLAUDE_HOME/.claude/skills" /workspace
-chown "$PUID:$PGID" "$CLAUDE_HOME" "$CLAUDE_HOME/.claude" "$CLAUDE_HOME/.claude/skills" /workspace
+chown "$PUID:$PGID" "$CLAUDE_HOME" 2>/dev/null || true
+# Bind-mounted paths — chown may legitimately fail
+try_chown "$PUID:$PGID" "$CLAUDE_HOME/.claude" "$CLAUDE_HOME/.claude/skills" /workspace
 
 # ---------- First-boot setup ----------
 if [ ! -f "$CLAUDE_HOME/.claude/.ccbox-init" ]; then
@@ -33,13 +41,13 @@ if [ ! -f "$CLAUDE_HOME/.claude/.ccbox-init" ]; then
     "
 
     touch "$CLAUDE_HOME/.claude/.ccbox-init"
-    chown -R "$PUID:$PGID" "$CLAUDE_HOME"
+    try_chown -R "$PUID:$PGID" "$CLAUDE_HOME"
     echo "[ccbox] First boot complete."
 fi
 
 # ---------- Sync skills (every boot, no-clobber) ----------
 cp -rn /opt/ccbox/skills/* "$CLAUDE_HOME/.claude/skills/" 2>/dev/null || true
-chown -R "$PUID:$PGID" "$CLAUDE_HOME/.claude/skills"
+try_chown -R "$PUID:$PGID" "$CLAUDE_HOME/.claude/skills"
 
 # ---------- Persist .claude.json ----------
 # Claude Code stores auth state in ~/.claude.json (outside ~/.claude/).
@@ -48,7 +56,14 @@ if [ ! -L "$CLAUDE_HOME/.claude.json" ]; then
     rm -f "$CLAUDE_HOME/.claude.json"
     [ ! -s "$CLAUDE_HOME/.claude/.claude.json" ] && echo '{}' > "$CLAUDE_HOME/.claude/.claude.json"
     ln -sf "$CLAUDE_HOME/.claude/.claude.json" "$CLAUDE_HOME/.claude.json"
-    chown "$PUID:$PGID" "$CLAUDE_HOME/.claude/.claude.json"
+    try_chown "$PUID:$PGID" "$CLAUDE_HOME/.claude/.claude.json"
+fi
+
+# ---------- Verify bind mounts are usable ----------
+if ! su -s /bin/sh claude -c "test -w '$CLAUDE_HOME/.claude' && test -w /workspace" 2>/dev/null; then
+    echo "[ccbox] Error: ~/.claude or /workspace is not writable by the claude user." >&2
+    echo "[ccbox] If using Podman, try adding: -e PUID=\$(id -u) -e PGID=\$(id -g)" >&2
+    exit 1
 fi
 
 # ---------- code-server first-boot setup ----------
@@ -82,7 +97,7 @@ PYEOF
     if [ ! -d "$CS_EXTENSIONS" ]; then
         cp -r /opt/ccbox/code-server-extensions "$CS_EXTENSIONS"
     fi
-    chown -R "$PUID:$PGID" "$CS_DATA"
+    try_chown -R "$PUID:$PGID" "$CS_DATA"
 
     echo "[ccbox] Starting web UI..."
     export HOME="$CLAUDE_HOME"
