@@ -171,7 +171,7 @@ function ccbox --description "Run ccbox container"
         end < "$HOME/.config/ccbox/auth.env"
     end
     if test (count $argv) -ge 1; and test "$argv[1]" = "stop"
-        set -l cids ($runtime ps -q --filter ancestor=ghcr.io/mk0e/ccbox:latest 2>/dev/null)
+        set -l cids ($runtime ps -q --filter ancestor=ghcr.io/moritzbutzmann/ccbox:latest 2>/dev/null)
         if test -n "$cids"
             $runtime stop $cids >/dev/null 2>&1
             echo "ccbox stopped."
@@ -187,7 +187,7 @@ function ccbox --description "Run ccbox container"
             set port $argv[1]
             set -e argv[1]
         end
-        set -l existing ($runtime ps -q --filter ancestor=ghcr.io/mk0e/ccbox:latest 2>/dev/null)
+        set -l existing ($runtime ps -q --filter ancestor=ghcr.io/moritzbutzmann/ccbox:latest 2>/dev/null)
         if test -n "$existing"
             echo "ccbox is already running. Open http://localhost:$port or run: ccbox stop"
             return
@@ -199,7 +199,7 @@ function ccbox --description "Run ccbox container"
         test -n "$base_url"; and set -a args -e "ANTHROPIC_BASE_URL=$base_url"
         echo "ccbox is running at http://localhost:$port"
         echo "Press Ctrl+C to stop."
-        $runtime $args ghcr.io/mk0e/ccbox:latest web $argv
+        $runtime $args ghcr.io/moritzbutzmann/ccbox:latest web $argv
         return
     end
     set -l args run -it --rm \
@@ -207,7 +207,7 @@ function ccbox --description "Run ccbox container"
         -v $HOME/.ccbox:/home/claude/.claude
     test -n "$api_key";  and set -a args -e "ANTHROPIC_API_KEY=$api_key"
     test -n "$base_url"; and set -a args -e "ANTHROPIC_BASE_URL=$base_url"
-    $runtime $args ghcr.io/mk0e/ccbox:latest $argv
+    $runtime $args ghcr.io/moritzbutzmann/ccbox:latest $argv
 end
 # <<< ccbox <<<
 FISH_FUNC
@@ -247,7 +247,7 @@ ccbox() {
     fi
     if [ "$1" = "stop" ]; then
         local cids
-        cids="$("$runtime" ps -q --filter ancestor=ghcr.io/mk0e/ccbox:latest 2>/dev/null)"
+        cids="$("$runtime" ps -q --filter ancestor=ghcr.io/moritzbutzmann/ccbox:latest 2>/dev/null)"
         if [ -n "$cids" ]; then
             "$runtime" stop $cids >/dev/null 2>&1
             echo "ccbox stopped."
@@ -264,7 +264,7 @@ ccbox() {
             shift
         fi
         local existing
-        existing="$("$runtime" ps -q --filter ancestor=ghcr.io/mk0e/ccbox:latest 2>/dev/null)"
+        existing="$("$runtime" ps -q --filter ancestor=ghcr.io/moritzbutzmann/ccbox:latest 2>/dev/null)"
         if [ -n "$existing" ]; then
             echo "ccbox is already running. Open http://localhost:$port or run: ccbox stop"
             return
@@ -277,7 +277,7 @@ ccbox() {
         [ -n "$base_url" ] && args+=(-e "ANTHROPIC_BASE_URL=$base_url")
         echo "ccbox is running at http://localhost:$port"
         echo "Press Ctrl+C to stop."
-        "$runtime" "${args[@]}" ghcr.io/mk0e/ccbox:latest web "$@"
+        "$runtime" "${args[@]}" ghcr.io/moritzbutzmann/ccbox:latest web "$@"
         return
     fi
     local args=(run -it --rm
@@ -286,7 +286,7 @@ ccbox() {
     )
     [ -n "$api_key" ]  && args+=(-e "ANTHROPIC_API_KEY=$api_key")
     [ -n "$base_url" ] && args+=(-e "ANTHROPIC_BASE_URL=$base_url")
-    "$runtime" "${args[@]}" ghcr.io/mk0e/ccbox:latest "$@"
+    "$runtime" "${args[@]}" ghcr.io/moritzbutzmann/ccbox:latest "$@"
 }
 # <<< ccbox <<<
 SHELL_FUNC
@@ -347,7 +347,7 @@ build_local_image() {
         exit 1
     fi
     info "Building ccbox image locally..."
-    "$RUNTIME" build -t ghcr.io/mk0e/ccbox:latest .
+    "$RUNTIME" build -t ghcr.io/moritzbutzmann/ccbox:latest .
     info "Build complete."
 }
 
