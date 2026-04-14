@@ -256,73 +256,138 @@ ccbox() {
         echo "ccbox: docker or podman is required but not found." >&2
         return 1
     fi
-    # Rootless Podman needs --userns=keep-id so the host user maps to the
-    # in-container claude user (UID 1000). Detect: podman + non-root invoker.
+
+    local ccbox_data="$HOME/.ccbox"
+    local registry="$ccbox_data/workspaces.json"
+    local variants_dir="$ccbox_data/variants"
+
+    # --- Resolve which variant to use ---
+    local registry_default=""
+    if [ -f "$registry" ]; then
+        registry_default="$(sed -n 's/.*"default": *"\([^"]*\)".*/\1/p' "$registry")"
+    fi
+
+    local variant=""
+    if [ $# -gt 0 ] && [ -f "$variants_dir/$1.env" ]; then
+        variant="$1"
+        shift
+    fi
+    if [ -z "$variant" ]; then
+        variant="${registry_default:-docs}"
+    fi
+
+    local var_env="$variants_dir/$variant.env"
+    if [ ! -f "$var_env" ]; then
+        echo "ccbox: variant '$variant' is not installed." >&2
+        echo "Run ./install.sh --add $variant to install it." >&2
+        return 1
+    fi
+
+    # --- Read variant fields ---
+    local v_name v_mount v_image v_webport
+    v_name="$(sed -n 's/^name=//p'        "$var_env")"
+    v_mount="$(sed -n 's/^mount=//p'      "$var_env")"
+    v_image="$(sed -n 's/^image=//p'      "$var_env")"
+    v_webport="$(sed -n 's/^web_port=//p' "$var_env")"
+    [ -z "$v_image" ]   && v_image="ghcr.io/mk0e/ccbox:$v_name"
+    [ -z "$v_mount" ]   && v_mount="."
+    [ -z "$v_webport" ] && v_webport=8080
+
+    local container_name="ccbox-$v_name"
+
+    # --- Resolve host mount path ---
+    local mount_abs
+    if [ "$v_mount" = "." ]; then
+        mount_abs="$(pwd)"
+    else
+        mount_abs="$(pwd)/${v_mount#./}"
+        mkdir -p "$mount_abs"
+    fi
+
+    # --- Seed files on first launch (empty target dir only) ---
+    if [ "$v_mount" != "." ] && [ -z "$(ls -A "$mount_abs" 2>/dev/null)" ]; then
+        "$runtime" run --rm -v "$mount_abs":/target "$v_image" \
+            sh -c 'cp -rn /opt/ccbox/seed/. /target/ 2>/dev/null || true' \
+            >/dev/null 2>&1 || true
+    fi
+
+    # --- Handle stop (all) ---
+    if [ "$1" = "stop" ]; then
+        local stopped=0
+        local envfile
+        for envfile in "$variants_dir"/*.env; do
+            [ -f "$envfile" ] || continue
+            local nm; nm="$(sed -n 's/^name=//p' "$envfile")"
+            local cname="ccbox-$nm"
+            if "$runtime" ps --filter "name=^${cname}$" --format '{{.Names}}' | grep -qx "$cname"; then
+                "$runtime" stop "$cname" >/dev/null 2>&1
+                echo "Stopped $cname."
+                stopped=$((stopped+1))
+            fi
+        done
+        [ "$stopped" -eq 0 ] && echo "No running ccbox containers found."
+        return
+    fi
+
+    # --- Podman userns + uid mapping ---
     local userns_args=()
     local uidgid_args=(-e "PUID=$(id -u)" -e "PGID=$(id -g)")
     if [ "$runtime" = "podman" ] && [ "$(id -u)" != "0" ]; then
         userns_args=(--userns=keep-id:uid=1000,gid=1000)
         uidgid_args=()
     fi
+
+    # --- Auth env ---
     local base_url="${ANTHROPIC_BASE_URL:-}"
     local api_key="${ANTHROPIC_API_KEY:-}"
     if [ -z "$api_key" ] && [ -f "$HOME/.config/ccbox/auth.env" ]; then
         while read -r line; do
             [[ -z "$line" || "$line" =~ ^# ]] && continue
-            local key="${line%%=*}"
-            local value="${line#*=}"
+            local key="${line%%=*}" value="${line#*=}"
             case "$key" in
                 ANTHROPIC_API_KEY)  api_key="$value" ;;
                 ANTHROPIC_BASE_URL) base_url="$value" ;;
             esac
         done < "$HOME/.config/ccbox/auth.env"
     fi
-    if [ "$1" = "stop" ]; then
-        local cids
-        cids="$("$runtime" ps -q --filter ancestor=ghcr.io/mk0e/ccbox:latest 2>/dev/null)"
-        if [ -n "$cids" ]; then
-            "$runtime" stop $cids >/dev/null 2>&1
-            echo "ccbox stopped."
-        else
-            echo "No running ccbox containers found."
-        fi
-        return
-    fi
+
+    mkdir -p "$HOME/.ccbox/home/$v_name"
+
+    # --- Web mode ---
     if [ "$1" = "web" ]; then
         shift
-        local port=8080
+        local port="$v_webport"
         if [ $# -gt 0 ] && [[ "$1" =~ ^[0-9]+$ ]]; then
-            port="$1"
-            shift
+            port="$1"; shift
         fi
-        local existing
-        existing="$("$runtime" ps -q --filter ancestor=ghcr.io/mk0e/ccbox:latest 2>/dev/null)"
-        if [ -n "$existing" ]; then
-            echo "ccbox is already running. Open http://localhost:$port or run: ccbox stop"
+        if "$runtime" ps --filter "name=^${container_name}$" --format '{{.Names}}' | grep -qx "$container_name"; then
+            echo "$container_name is already running. Open http://localhost:$port or run: ccbox $v_name stop"
             return
         fi
-        local args=(run --rm -p "127.0.0.1:$port:8080"
+        local args=(run --rm --name "$container_name" -p "127.0.0.1:$port:8080"
             "${userns_args[@]}"
-            -v "$(pwd)":/workspace
-            -v "$HOME/.ccbox":/home/claude/.claude
+            -v "$mount_abs":/workspace
+            -v "$HOME/.ccbox/home/$v_name":/home/claude/.claude
             "${uidgid_args[@]}"
         )
         [ -n "$api_key" ]  && args+=(-e "ANTHROPIC_API_KEY=$api_key")
         [ -n "$base_url" ] && args+=(-e "ANTHROPIC_BASE_URL=$base_url")
-        echo "ccbox is running at http://localhost:$port"
+        echo "ccbox ($v_name) is running at http://localhost:$port"
         echo "Press Ctrl+C to stop."
-        "$runtime" "${args[@]}" ghcr.io/mk0e/ccbox:latest web "$@"
+        "$runtime" "${args[@]}" "$v_image" web "$@"
         return
     fi
-    local args=(run -it --rm
+
+    # --- Interactive mode ---
+    local args=(run -it --rm --name "$container_name"
         "${userns_args[@]}"
-        -v "$(pwd)":/workspace
-        -v "$HOME/.ccbox":/home/claude/.claude
+        -v "$mount_abs":/workspace
+        -v "$HOME/.ccbox/home/$v_name":/home/claude/.claude
         "${uidgid_args[@]}"
     )
     [ -n "$api_key" ]  && args+=(-e "ANTHROPIC_API_KEY=$api_key")
     [ -n "$base_url" ] && args+=(-e "ANTHROPIC_BASE_URL=$base_url")
-    "$runtime" "${args[@]}" ghcr.io/mk0e/ccbox:latest "$@"
+    "$runtime" "${args[@]}" "$v_image" "$@"
 }
 # <<< ccbox <<<
 SHELL_FUNC
