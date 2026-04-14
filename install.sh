@@ -11,16 +11,28 @@ set -e
 #   curl -fsSL https://unitedunicorns.org/gitlab/techboard/ccbox/-/raw/main/install.sh | bash
 # ==============================================================================
 
+# ---------- Variant helpers ----------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib/variants.sh"
+
 CCBOX_DATA="$HOME/.ccbox"
 CCBOX_CONFIG="$HOME/.config/ccbox"
 AUTH_ENV="$CCBOX_CONFIG/auth.env"
+REGISTRY_FILE="$CCBOX_DATA/workspaces.json"
 
 # ---------- Arg parsing ----------
 BUILD_LOCAL=false
-for arg in "$@"; do
-    case "$arg" in
-        --build) BUILD_LOCAL=true ;;
-        *) printf "Unknown option: %s\n" "$arg" >&2; exit 1 ;;
+ACTION_ADD=""
+ACTION_REMOVE=""
+ACTION_UPDATE=false
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --build)  BUILD_LOCAL=true; shift ;;
+        --add)    ACTION_ADD="$2";    shift 2 ;;
+        --remove) ACTION_REMOVE="$2"; shift 2 ;;
+        --update) ACTION_UPDATE=true; shift ;;
+        *) printf "Unknown option: %s\n" "$1" >&2; exit 1 ;;
     esac
 done
 
@@ -223,6 +235,13 @@ function ccbox --description "Run ccbox container"
 end
 # <<< ccbox <<<
 FISH_FUNC
+        info ""
+        info "NOTE: the fish ccbox function is not yet variant-aware."
+        info "      It always runs ghcr.io/mk0e/ccbox:latest (the docs variant)."
+        info "      Multi-variant dispatch (including diy-news-collector) is"
+        info "      available today in bash and zsh. Fish support is a"
+        info "      tracked follow-up."
+        info ""
         return
     fi
 
@@ -244,73 +263,163 @@ ccbox() {
         echo "ccbox: docker or podman is required but not found." >&2
         return 1
     fi
-    # Rootless Podman needs --userns=keep-id so the host user maps to the
-    # in-container claude user (UID 1000). Detect: podman + non-root invoker.
+
+    local ccbox_data="$HOME/.ccbox"
+    local registry="$ccbox_data/workspaces.json"
+    local variants_dir="$ccbox_data/variants"
+
+    # --- Resolve which variant to use ---
+    local registry_default=""
+    if [ -f "$registry" ]; then
+        registry_default="$(sed -n 's/.*"default": *"\([^"]*\)".*/\1/p' "$registry")"
+    fi
+
+    # First arg disambiguation:
+    #   - known variant name          → consume as variant
+    #   - 'web' or 'stop'              → subcommand, don't consume
+    #   - starts with '-' or empty     → claude passthrough, don't consume
+    #   - anything else                → assume mistyped variant, error out
+    local variant=""
+    local first_arg="${1:-}"
+    if [ -n "$first_arg" ] && [ -f "$variants_dir/$first_arg.env" ]; then
+        variant="$first_arg"
+        shift
+    elif [ -n "$first_arg" ] \
+         && [ "$first_arg" != "web" ] \
+         && [ "$first_arg" != "stop" ] \
+         && [ "${first_arg:0:1}" != "-" ]; then
+        echo "ccbox: variant '$first_arg' is not installed." >&2
+        if [ -d "$variants_dir" ]; then
+            local available=""
+            local envfile
+            for envfile in "$variants_dir"/*.env; do
+                [ -f "$envfile" ] || continue
+                available="$available  $(basename "${envfile%.env}")\n"
+            done
+            if [ -n "$available" ]; then
+                echo "Available variants:" >&2
+                printf "$available" >&2
+            fi
+        fi
+        echo "Install with: ./install.sh --add $first_arg" >&2
+        return 1
+    fi
+    if [ -z "$variant" ]; then
+        variant="${registry_default:-docs}"
+    fi
+
+    local var_env="$variants_dir/$variant.env"
+    if [ ! -f "$var_env" ]; then
+        echo "ccbox: variant '$variant' is not installed." >&2
+        echo "Run ./install.sh --add $variant to install it." >&2
+        return 1
+    fi
+
+    # --- Read variant fields ---
+    local v_name v_mount v_image v_webport
+    v_name="$(sed -n 's/^name=//p'        "$var_env")"
+    v_mount="$(sed -n 's/^mount=//p'      "$var_env")"
+    v_image="$(sed -n 's/^image=//p'      "$var_env")"
+    v_webport="$(sed -n 's/^web_port=//p' "$var_env")"
+    [ -z "$v_image" ]   && v_image="ghcr.io/mk0e/ccbox:$v_name"
+    [ -z "$v_mount" ]   && v_mount="."
+    [ -z "$v_webport" ] && v_webport=8080
+
+    local container_name="ccbox-$v_name"
+
+    # --- Resolve host mount path ---
+    local mount_abs
+    if [ "$v_mount" = "." ]; then
+        mount_abs="$(pwd)"
+    else
+        mount_abs="$(pwd)/${v_mount#./}"
+        mkdir -p "$mount_abs"
+    fi
+
+    # --- Seed files on first launch (empty target dir only) ---
+    if [ "$v_mount" != "." ] && [ -z "$(ls -A "$mount_abs" 2>/dev/null)" ]; then
+        "$runtime" run --rm -v "$mount_abs":/target "$v_image" \
+            sh -c 'cp -rn /opt/ccbox/seed/. /target/ 2>/dev/null || true' \
+            >/dev/null 2>&1 || true
+    fi
+
+    # --- Handle stop (all) ---
+    if [ "$1" = "stop" ]; then
+        local stopped=0
+        local envfile
+        for envfile in "$variants_dir"/*.env; do
+            [ -f "$envfile" ] || continue
+            local nm; nm="$(sed -n 's/^name=//p' "$envfile")"
+            local cname="ccbox-$nm"
+            if "$runtime" ps --filter "name=^${cname}$" --format '{{.Names}}' | grep -qx "$cname"; then
+                "$runtime" stop "$cname" >/dev/null 2>&1
+                echo "Stopped $cname."
+                stopped=$((stopped+1))
+            fi
+        done
+        [ "$stopped" -eq 0 ] && echo "No running ccbox containers found."
+        return
+    fi
+
+    # --- Podman userns + uid mapping ---
     local userns_args=()
     local uidgid_args=(-e "PUID=$(id -u)" -e "PGID=$(id -g)")
     if [ "$runtime" = "podman" ] && [ "$(id -u)" != "0" ]; then
         userns_args=(--userns=keep-id:uid=1000,gid=1000)
         uidgid_args=()
     fi
+
+    # --- Auth env ---
     local base_url="${ANTHROPIC_BASE_URL:-}"
     local api_key="${ANTHROPIC_API_KEY:-}"
     if [ -z "$api_key" ] && [ -f "$HOME/.config/ccbox/auth.env" ]; then
         while read -r line; do
             [[ -z "$line" || "$line" =~ ^# ]] && continue
-            local key="${line%%=*}"
-            local value="${line#*=}"
+            local key="${line%%=*}" value="${line#*=}"
             case "$key" in
                 ANTHROPIC_API_KEY)  api_key="$value" ;;
                 ANTHROPIC_BASE_URL) base_url="$value" ;;
             esac
         done < "$HOME/.config/ccbox/auth.env"
     fi
-    if [ "$1" = "stop" ]; then
-        local cids
-        cids="$("$runtime" ps -q --filter ancestor=ghcr.io/mk0e/ccbox:latest 2>/dev/null)"
-        if [ -n "$cids" ]; then
-            "$runtime" stop $cids >/dev/null 2>&1
-            echo "ccbox stopped."
-        else
-            echo "No running ccbox containers found."
-        fi
-        return
-    fi
+
+    mkdir -p "$HOME/.ccbox/home/$v_name"
+
+    # --- Web mode ---
     if [ "$1" = "web" ]; then
         shift
-        local port=8080
+        local port="$v_webport"
         if [ $# -gt 0 ] && [[ "$1" =~ ^[0-9]+$ ]]; then
-            port="$1"
-            shift
+            port="$1"; shift
         fi
-        local existing
-        existing="$("$runtime" ps -q --filter ancestor=ghcr.io/mk0e/ccbox:latest 2>/dev/null)"
-        if [ -n "$existing" ]; then
-            echo "ccbox is already running. Open http://localhost:$port or run: ccbox stop"
+        if "$runtime" ps --filter "name=^${container_name}$" --format '{{.Names}}' | grep -qx "$container_name"; then
+            echo "$container_name is already running. Open http://localhost:$port or run: ccbox $v_name stop"
             return
         fi
-        local args=(run --rm -p "127.0.0.1:$port:8080"
+        local args=(run --rm --name "$container_name" -p "127.0.0.1:$port:8080"
             "${userns_args[@]}"
-            -v "$(pwd)":/workspace
-            -v "$HOME/.ccbox":/home/claude/.claude
+            -v "$mount_abs":/workspace
+            -v "$HOME/.ccbox/home/$v_name":/home/claude/.claude
             "${uidgid_args[@]}"
         )
         [ -n "$api_key" ]  && args+=(-e "ANTHROPIC_API_KEY=$api_key")
         [ -n "$base_url" ] && args+=(-e "ANTHROPIC_BASE_URL=$base_url")
-        echo "ccbox is running at http://localhost:$port"
+        echo "ccbox ($v_name) is running at http://localhost:$port"
         echo "Press Ctrl+C to stop."
-        "$runtime" "${args[@]}" ghcr.io/mk0e/ccbox:latest web "$@"
+        "$runtime" "${args[@]}" "$v_image" web "$@"
         return
     fi
-    local args=(run -it --rm
+
+    # --- Interactive mode ---
+    local args=(run -it --rm --name "$container_name"
         "${userns_args[@]}"
-        -v "$(pwd)":/workspace
-        -v "$HOME/.ccbox":/home/claude/.claude
+        -v "$mount_abs":/workspace
+        -v "$HOME/.ccbox/home/$v_name":/home/claude/.claude
         "${uidgid_args[@]}"
     )
     [ -n "$api_key" ]  && args+=(-e "ANTHROPIC_API_KEY=$api_key")
     [ -n "$base_url" ] && args+=(-e "ANTHROPIC_BASE_URL=$base_url")
-    "$runtime" "${args[@]}" ghcr.io/mk0e/ccbox:latest "$@"
+    "$runtime" "${args[@]}" "$v_image" "$@"
 }
 # <<< ccbox <<<
 SHELL_FUNC
@@ -360,6 +469,149 @@ configure_auth() {
             exit 1
             ;;
     esac
+}
+
+# ---------- Variant selection ----------
+select_variants() {
+    WANTED_VARIANTS=()
+    local available=()
+    mapfile -t available < <(list_variants "$SCRIPT_DIR/variants")
+    if [ "${#available[@]}" -eq 0 ]; then
+        info "No variants found under variants/ — aborting."
+        exit 1
+    fi
+
+    registry_load "$REGISTRY_FILE"
+    local preselected=("${REGISTRY_INSTALLED[@]}")
+    if [ "${#preselected[@]}" -eq 0 ]; then
+        preselected=("docs")
+    fi
+
+    info ""
+    info "Which workspaces do you want installed?"
+    info "Enter comma-separated numbers. Current selection is shown in [ ]."
+    local i=1 name desc marker
+    declare -A index_to_name=()
+    for name in "${available[@]}"; do
+        desc="$(get_variant_field "$SCRIPT_DIR/variants/$name/workspace.env" description)"
+        marker=" "
+        local p
+        for p in "${preselected[@]}"; do
+            [ "$p" = "$name" ] && marker="x"
+        done
+        info "  [$marker] $i) $name — $desc"
+        index_to_name[$i]="$name"
+        i=$((i + 1))
+    done
+    info ""
+    prompt "> "
+
+    if [ -z "$REPLY" ]; then
+        WANTED_VARIANTS=("${preselected[@]}")
+        return 0
+    fi
+
+    local IFS=','
+    local token
+    for token in $REPLY; do
+        token="${token// /}"
+        if [ -n "${index_to_name[$token]:-}" ]; then
+            WANTED_VARIANTS+=("${index_to_name[$token]}")
+        else
+            info "Ignoring invalid selection: $token"
+        fi
+    done
+}
+
+# ---------- Per-variant image operations ----------
+variant_image() { printf 'ghcr.io/mk0e/ccbox:%s\n' "$1"; }
+
+pull_variant() {
+    local name="$1"
+    local image; image="$(variant_image "$name")"
+    if "$RUNTIME" image inspect "$image" &>/dev/null; then
+        return 0
+    fi
+    info ""
+    info "Pulling $image ..."
+    if "$RUNTIME" pull "$image" > /dev/tty 2>&1; then
+        info "Pulled $image."
+    else
+        info "Warning: could not pull $image. It will be pulled on first use."
+    fi
+}
+
+force_pull_variant() {
+    local name="$1"
+    local image; image="$(variant_image "$name")"
+    info ""
+    info "Pulling $image from remote..."
+    if ! "$RUNTIME" pull "$image" > /dev/tty 2>&1; then
+        info "Error: could not pull $image."
+        exit 1
+    fi
+    info "Updated $image."
+}
+
+build_variant() {
+    local name="$1"
+    local dockerfile="$SCRIPT_DIR/variants/$name/Dockerfile"
+    local image; image="$(variant_image "$name")"
+    if [ ! -f "$dockerfile" ]; then
+        info "No Dockerfile found for variant '$name' at $dockerfile — skipping."
+        return 1
+    fi
+    info "Building $image locally..."
+    "$RUNTIME" build -t ccbox-base:latest "$SCRIPT_DIR"
+    "$RUNTIME" build -t "$image" -f "$dockerfile" "$SCRIPT_DIR"
+    info "Built $image."
+}
+
+apply_variant_selection() {
+    local previously=()
+    registry_load "$REGISTRY_FILE"
+    previously=("${REGISTRY_INSTALLED[@]}")
+
+    local name
+    for name in "${WANTED_VARIANTS[@]}"; do
+        if $BUILD_LOCAL; then
+            build_variant "$name" || continue
+        else
+            pull_variant "$name"
+        fi
+        registry_add "$REGISTRY_FILE" "$name"
+    done
+
+    for name in "${previously[@]}"; do
+        local keep=false p
+        for p in "${WANTED_VARIANTS[@]}"; do
+            [ "$p" = "$name" ] && keep=true
+        done
+        if ! $keep; then
+            registry_remove "$REGISTRY_FILE" "$name"
+            info "Removed $name from registry."
+        fi
+    done
+
+    registry_load "$REGISTRY_FILE"
+    local new_default="${REGISTRY_INSTALLED[0]:-}"
+    local n
+    for n in "${REGISTRY_INSTALLED[@]}"; do
+        [ "$n" = "docs" ] && new_default="docs"
+    done
+    if [ -n "$new_default" ]; then
+        registry_write "$REGISTRY_FILE" "$new_default" "${REGISTRY_INSTALLED[@]}"
+    fi
+
+    # Snapshot each installed variant's workspace.env into ~/.ccbox/variants/
+    # so the shell function can read metadata without sourcing lib/variants.sh.
+    mkdir -p "$CCBOX_DATA/variants"
+    registry_load "$REGISTRY_FILE"
+    for n in "${REGISTRY_INSTALLED[@]}"; do
+        if [ -f "$SCRIPT_DIR/variants/$n/workspace.env" ]; then
+            cp "$SCRIPT_DIR/variants/$n/workspace.env" "$CCBOX_DATA/variants/$n.env"
+        fi
+    done
 }
 
 # ---------- Build local image ----------
@@ -434,35 +686,47 @@ do_already_installed() {
     info ""
     info "ccbox is already set up."
     info "Auth: $(auth_label)"
+    registry_load "$REGISTRY_FILE"
+    info "Installed workspaces: ${REGISTRY_INSTALLED[*]:-none}"
     info ""
     info "  1) Update ccbox command"
-    info "  2) Update ccbox image - pull from remote"
-    info "  3) Update ccbox image - build from source"
-    info "  4) Change how I log in"
-    info "  5) Remove ccbox"
+    info "  2) Update installed images (pull from remote)"
+    info "  3) Update installed images (build from source)"
+    info "  4) Add or remove workspaces"
+    info "  5) Change how I log in"
+    info "  6) Remove ccbox"
     info ""
     prompt "> "
 
     case "$REPLY" in
         1)
             install_function
-            info ""
             info "ccbox command updated. Close this terminal and open a new one."
             ;;
         2)
-            force_pull_image
+            registry_load "$REGISTRY_FILE"
+            for name in "${REGISTRY_INSTALLED[@]}"; do
+                force_pull_variant "$name"
+            done
             ;;
         3)
-            build_local_image
+            BUILD_LOCAL=true
+            registry_load "$REGISTRY_FILE"
+            WANTED_VARIANTS=("${REGISTRY_INSTALLED[@]}")
+            apply_variant_selection
             ;;
         4)
+            select_variants
+            apply_variant_selection
+            install_function
+            ;;
+        5)
             configure_auth
             install_function
-            info ""
             info "Done! Close this terminal, open a new one, then run: ccbox"
             [ -n "${AUTH_HINT:-}" ] && info "$AUTH_HINT"
             ;;
-        5)
+        6)
             do_uninstall
             ;;
         *)
@@ -497,20 +761,60 @@ do_first_run() {
 detect_runtime
 detect_shell
 
-is_installed=false
-if [ "$CURRENT_SHELL" = "fish" ]; then
-    [ -f "$RC_FILE" ] && grep -q '# >>> ccbox >>>' "$RC_FILE" 2>/dev/null && is_installed=true
-else
-    [ -f "$RC_FILE" ] && grep -q '# >>> ccbox >>>' "$RC_FILE" 2>/dev/null && is_installed=true
+# Non-interactive shortcuts
+if [ -n "$ACTION_ADD" ]; then
+    if [ ! -d "$SCRIPT_DIR/variants/$ACTION_ADD" ]; then
+        info "Unknown variant: $ACTION_ADD"
+        info "Available variants:"
+        list_variants "$SCRIPT_DIR/variants" | sed 's/^/  /'
+        exit 1
+    fi
+    registry_load "$REGISTRY_FILE"
+    WANTED_VARIANTS=("${REGISTRY_INSTALLED[@]}" "$ACTION_ADD")
+    apply_variant_selection
+    install_function
+    info "Added $ACTION_ADD."
+    exit 0
 fi
 
+if [ -n "$ACTION_REMOVE" ]; then
+    registry_load "$REGISTRY_FILE"
+    WANTED_VARIANTS=()
+    for v in "${REGISTRY_INSTALLED[@]}"; do
+        [ "$v" != "$ACTION_REMOVE" ] && WANTED_VARIANTS+=("$v")
+    done
+    apply_variant_selection
+    install_function
+    info "Removed $ACTION_REMOVE."
+    exit 0
+fi
+
+if $ACTION_UPDATE; then
+    registry_load "$REGISTRY_FILE"
+    for name in "${REGISTRY_INSTALLED[@]}"; do
+        force_pull_variant "$name"
+    done
+    install_function
+    info "Update complete."
+    exit 0
+fi
+
+# Interactive flow
+is_installed=false
+[ -f "$RC_FILE" ] && grep -q '# >>> ccbox >>>' "$RC_FILE" 2>/dev/null && is_installed=true
+
 if $is_installed; then
-    # Always update the function silently
     check_existing_ccbox
     install_function
     do_already_installed
 else
     check_existing_ccbox
     mkdir -p "$CCBOX_DATA"
-    do_first_run
+    configure_auth
+    select_variants
+    apply_variant_selection
+    install_function
+    info ""
+    info "ccbox is ready! Close this terminal, open a new one, then run: ccbox"
+    [ -n "${AUTH_HINT:-}" ] && info "$AUTH_HINT"
 fi

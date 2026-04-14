@@ -67,6 +67,17 @@ if [ "$CURRENT_UID" = "0" ]; then
     try_chown -R "$PUID:$PGID" "$CLAUDE_HOME/.claude/skills"
 fi
 
+# ---------- Seed workspace on first launch ----------
+# If the variant image ships seed files at /opt/ccbox/seed, copy them into
+# /workspace the first time we see an empty workspace. Existing files are
+# never overwritten (cp -n).
+if [ -d /opt/ccbox/seed ] && [ -n "$(ls -A /opt/ccbox/seed 2>/dev/null)" ]; then
+    cp -rn /opt/ccbox/seed/. /workspace/ 2>/dev/null || true
+    if [ "$CURRENT_UID" = "0" ]; then
+        try_chown -R "$PUID:$PGID" /workspace
+    fi
+fi
+
 # ---------- Persist .claude.json ----------
 # Claude Code stores auth state in ~/.claude.json (outside ~/.claude/).
 # Symlink it into the mounted volume so it survives container restarts.

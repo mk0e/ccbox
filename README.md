@@ -1,212 +1,191 @@
 # ccbox
 
-Create professional documents with AI — PDFs, presentations, spreadsheets, and Word documents — by describing what you need in plain language.
-
-ccbox runs [Claude Code](https://docs.anthropic.com/en/docs/claude-code) inside a Docker container with all the tools pre-installed for document generation. No setup, no dependencies to install — just describe what you want and get polished documents back.
+Containerized Claude Code workstations for focused, reproducible workflows. Each **variant** is a self-contained Docker image pre-loaded with the tools and skills for one purpose — document generation today, the DIY AI news collector workshop tomorrow, whatever you add next.
 
 ## Quick start
 
 **Install:**
 
 ```bash
-curl -fsSL https://github.com/mk0e/ccbox/blob/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/mk0e/ccbox/main/install.sh | bash
 ```
 
-The installer sets up the `ccbox` command and walks you through authentication. You'll need Docker (or Podman) running.
+The installer walks you through auth and asks which workspaces you want:
+
+```
+Which workspaces do you want installed?
+  [x] 1) docs                 — document generation (PDFs, PPTX, XLSX, DOCX)
+  [ ] 2) diy-news-collector   — AI news collector learning workshop
+```
+
+You can re-run `install.sh` any time to add, remove, or update workspaces. Non-interactive shortcuts:
+
+```bash
+./install.sh --add diy-news-collector      # add a variant
+./install.sh --remove diy-news-collector   # remove a variant
+./install.sh --update                       # update all installed variants
+./install.sh --build                        # build locally instead of pulling
+```
 
 **Use from terminal:**
 
 ```bash
-ccbox
-```
-
-Opens an interactive Claude Code session. Ask it to create documents:
-
-```
-> Create a PDF report with Q1 sales charts and an executive summary
-> Make a 10-slide pitch deck for a startup called Acme AI
-> Build an Excel budget tracker with monthly columns and formulas
+ccbox                        # starts the default variant (docs, unless you changed it)
+ccbox diy-news-collector     # starts the workshop variant
 ```
 
 **Use from browser:**
 
 ```bash
-ccbox web
+ccbox web                          # docs at http://localhost:8080
+ccbox diy-news-collector web       # workshop at http://localhost:8081
 ```
 
-Opens a browser-based interface at `http://localhost:8080` with a visual editor, file explorer, and Claude Code chat panel. Same capabilities, more visual.
+Each variant runs as its own container (`ccbox-docs`, `ccbox-diy-news-collector`, …) and can run concurrently with the others. They see only their own `/workspace`.
 
-Use a custom port if 8080 is taken:
+**Stop:**
 
 ```bash
-ccbox web 3000
+ccbox stop                         # stops all running ccbox containers
 ```
 
-**Stop the web interface:**
+## Shipped variants
+
+### `docs` — document generation
+
+Mounts your current directory directly at `/workspace`. Pre-loaded with LibreOffice, Pandoc, Tesseract, ImageMagick, Python doc libs, and Anthropic's document-generation skills (`/pdf`, `/xlsx`, `/pptx`, `/docx`, `/canvas-design`, etc.).
 
 ```bash
-ccbox stop
+cd ~/clients/acme/q1-report
+ccbox
+> Create a PDF with our Q1 revenue chart and an executive summary
 ```
 
-## How it works
+### `diy-news-collector` — AI news collector workshop
 
-```
-You describe a document
-        ↓
-Claude Code creates it using built-in skills and tools
-        ↓
-The finished file appears in your current directory
-```
-
-ccbox mounts your current directory into the container. Files Claude creates show up right where you ran the command.
-
-## Two ways to interact
-
-| | Terminal (`ccbox`) | Browser (`ccbox web`) |
-|---|---|---|
-| **Interface** | Claude Code CLI in your terminal | VS Code in browser with Claude Code extension |
-| **Best for** | Quick tasks, scripting, power users | Visual work, previewing documents, casual users |
-| **File access** | Current directory mounted at `/workspace` | Same — visible in the file explorer |
-| **Auth** | API key or Claude account | Same — configured once via installer |
-
-Both modes use the same container image and the same tools.
-
-## What's inside
-
-### Skills
-
-ccbox comes with 10 built-in skills that Claude uses automatically:
-
-| Skill | What it does |
-|-------|-------------|
-| `/pdf` | Create, edit, merge, split, OCR PDF documents |
-| `/xlsx` | Create and edit Excel spreadsheets with formulas |
-| `/pptx` | Create and edit PowerPoint presentations |
-| `/docx` | Create and edit Word documents with tracked changes |
-| `/doc-coauthoring` | Structured co-authoring workflow |
-| `/internal-comms` | Templates for status reports, newsletters |
-| `/theme-factory` | Apply consistent themes to documents |
-| `/canvas-design` | Create visual art, posters, infographics |
-| `/brand-guidelines` | Apply consistent brand identity |
-| `/skill-creator` | Create new custom skills |
-
-### Tools and libraries
-
-**System:** LibreOffice, Pandoc, Tesseract OCR, qpdf, pdftk, ImageMagick
-
-**Python:** reportlab, pdfplumber, pypdf, python-pptx, python-docx, openpyxl, pandas, Pillow, matplotlib
-
-**Node:** pptxgenjs, docx, pdf-lib, pdfjs-dist, sharp
-
-## Templates
-
-Place your company templates so Claude uses them automatically:
-
-**Per-project** (in your workspace):
-```
-my-project/templates/
-├── company.pptx
-└── report.docx
-```
-
-**Shared** (available in all sessions):
-```
-~/.ccbox/templates/
-├── company.pptx
-└── report.docx
-```
-
-When Claude creates a document, it checks both locations and uses matching templates to preserve your branding, layouts, and styles.
-
-## Resume and one-shot
-
-Resume your last session:
+Mounts `./diy-news-collector/` under your current directory. Pre-seeded with the step-by-step workshop guide, sample requirements, and environment file. Pre-loaded with Node, Python, Playwright (with Chromium), FastAPI, SQLite, the superpowers plugin, and a Haiku-ready Anthropic client.
 
 ```bash
-ccbox claude --continue
+mkdir ~/learning && cd ~/learning
+ccbox diy-news-collector web
+# Open http://localhost:8081, follow GUIDE.md inside the workspace
 ```
 
-Run a single command without an interactive session:
+Workshop participants get a clean isolated environment with everything pre-installed and the guide right in `/workspace/GUIDE.md`.
 
-```bash
-ccbox claude --print "Create a PDF report summarizing Q1 sales"
-```
+## How variants work
 
-## Managing ccbox
-
-Run the installer again to update the command, change auth, or uninstall:
-
-```bash
-./install.sh
-```
-
-To build the image locally from source instead of pulling from the registry (requires a repo checkout):
-
-```bash
-./install.sh --build
-```
-
-## Custom skills
-
-Add project-specific skills:
+Each variant lives under `variants/<name>/` in this repo:
 
 ```
-my-project/.claude/skills/my-skill/SKILL.md
+variants/<name>/
+├── Dockerfile        # FROM ccbox-base; layers variant-specific tools
+├── workspace.env     # name, image, mount, web_port, description
+├── CLAUDE.md         # system instructions baked into the image
+└── seed/             # files copied into /workspace on first launch
 ```
 
-Or add globally (available in all sessions):
+The `ccbox-base` image (`Dockerfile` at the repo root) provides the shared foundation: Claude Code CLI, Node 22, Python 3, locale, the `claude` user, code-server, and the entrypoint. Every variant `FROM`s this base and adds its own layers.
+
+Per-variant state:
+
+- **Container name:** `ccbox-<variant>` (so multiple variants run concurrently)
+- **Claude home:** `~/.ccbox/home/<variant>/` on the host (isolates `.claude/` per variant)
+- **Workspace mount:** from `workspace.env`'s `mount` field, resolved against your CWD
+- **System CLAUDE.md:** baked into the image at `/opt/ccbox/CLAUDE.md`, copied to `~/.claude/CLAUDE.md` on first boot — you can edit that copy freely
+- **Seed files:** from `/opt/ccbox/seed/`, copied into `/workspace/` only on first launch if the workspace is empty
+
+## Adding a new variant
+
+1. **Create the folder:**
+
+   ```bash
+   mkdir -p variants/my-variant/seed
+   ```
+
+2. **Write `variants/my-variant/workspace.env`:**
+
+   ```bash
+   name=my-variant
+   description=Short one-line description
+   image=ghcr.io/mk0e/ccbox:my-variant
+   mount=./my-variant/      # "." mounts CWD directly; anything else creates a subfolder
+   web_port=8082            # unique port so multiple variants can run concurrently
+   ```
+
+3. **Write `variants/my-variant/CLAUDE.md`** with the system instructions for this variant. Reference the variant's purpose, the files it ships, and any tools that are baked in. Keep this short — the user's editable CLAUDE.md layers on top.
+
+4. **Write `variants/my-variant/Dockerfile`:**
+
+   ```dockerfile
+   ARG BASE_IMAGE=ccbox-base:latest
+   FROM ${BASE_IMAGE}
+
+   LABEL org.opencontainers.image.description="My variant"
+
+   # Install your tools
+   RUN apt-get update && apt-get install -y --no-install-recommends \
+       <packages> \
+       && rm -rf /var/lib/apt/lists/*
+
+   # Copy variant config
+   COPY variants/my-variant/CLAUDE.md /opt/ccbox/CLAUDE.md
+   COPY variants/my-variant/seed      /opt/ccbox/seed
+
+   # Smoke test
+   RUN <check your tools are installed>
+   ```
+
+5. **Populate `seed/`** with any starter files you want dropped into the user's workspace on first launch (templates, guides, `.env` samples, etc.). Use an empty `seed/.gitkeep` if nothing.
+
+6. **Build and test locally:**
+
+   ```bash
+   docker build -t ccbox-base:latest .
+   ./install.sh --build --add my-variant
+   mkdir /tmp/my-variant-test && cd /tmp/my-variant-test
+   ccbox my-variant
+   ```
+
+7. **Submit upstream** (optional): open a PR against this repo. The CI matrix auto-discovers any variant under `variants/*/` and builds it.
+
+## File layout
 
 ```
-~/.ccbox/skills/my-skill/SKILL.md
+ccbox/
+├── Dockerfile                   # ccbox-base
+├── entrypoint.sh                # shared entrypoint
+├── install.sh                   # variant-aware installer
+├── lib/variants.sh              # discovery + registry helpers
+├── tests/                       # bash test scripts
+├── variants/
+│   ├── docs/
+│   │   ├── Dockerfile
+│   │   ├── workspace.env
+│   │   ├── CLAUDE.md
+│   │   └── seed/
+│   └── diy-news-collector/
+│       ├── Dockerfile
+│       ├── workspace.env
+│       ├── CLAUDE.md
+│       └── seed/
+└── docs/superpowers/
+    ├── specs/
+    └── plans/
 ```
 
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PUID` / `PGID` | `1000` | Match container user to your host UID/GID |
-| `GIT_USER_NAME` | `Claude` | Git author name inside container |
-| `GIT_USER_EMAIL` | `claude@ccbox` | Git author email inside container |
-
-## Docker image
+## Docker images
 
 Pre-built multi-arch images are published to the GitHub Container Registry:
 
 ```
-ghcr.io/mk0e/ccbox:latest          # latest stable build
-ghcr.io/mk0e/ccbox:v1.2.3          # specific release
+ghcr.io/mk0e/ccbox-base:latest            # shared foundation
+ghcr.io/mk0e/ccbox:docs                   # document generation variant
+ghcr.io/mk0e/ccbox:diy-news-collector     # workshop variant
+ghcr.io/mk0e/ccbox:latest                 # alias for ccbox:docs (backwards compat)
 ```
 
-### Supported architectures
-
-| Architecture | Tag suffix |
-|---|---|
-| `linux/amd64` | *(default)* |
-| `linux/arm64` | *(auto-selected)* |
-
-Docker pulls the correct variant automatically based on the host platform.
-
-### Build pipeline
-
-The image is built and pushed automatically on both GitHub and GitLab:
-
-**GitHub** ([Build & Push workflow](.github/workflows/docker-build.yml)):
-
-| Trigger | Tags pushed |
-|---|---|
-| Push to `main` | `latest` |
-| Nightly schedule (02:00 UTC) | `latest` |
-| New GitHub release (e.g. `v1.2.3`) | `v1.2.3`, `1.2.3`, `latest` |
-
-**GitLab** ([`.gitlab-ci.yml`](.gitlab-ci.yml)):
-
-| Trigger | Tags pushed |
-|---|---|
-| Push to `main` | `latest` |
-| Scheduled pipeline | `latest` |
-| New tag (e.g. `v1.2.3`) | `v1.2.3`, `latest` |
-
-Builds use Docker Buildx with QEMU emulation for faster incremental builds.
+Supported architectures: `linux/amd64`, `linux/arm64`.
 
 ## License
 

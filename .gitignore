@@ -7,4 +7,4 @@ workspace
 .claude
 templates
 .DS_Store
-docs
+/docs
