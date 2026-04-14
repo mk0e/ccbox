@@ -1,87 +1,92 @@
-# ==============================================================================
-# docker-build.yml — Multi-arch container build and publish pipeline
-#
-# Triggers
-#   • Push to `main`                → builds and pushes the `latest` tag
-#   • Nightly schedule (02:00 UTC)  → same as above (keeps `latest` fresh)
-#   • New release / tag (v*)        → also pushes a versioned tag (e.g. v1.2.3)
-#
-# Architectures: linux/amd64  linux/arm64
-#
-# Registry: ghcr.io/mk0e/ccbox
-#
-# Required repository secret (set automatically for GITHUB_TOKEN):
-#   GITHUB_TOKEN — used to authenticate with ghcr.io
-# ==============================================================================
-
-name: Build & Push Docker image
+name: Build & Push Docker images
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   schedule:
-    # Nightly at 02:00 UTC
     - cron: "0 2 * * *"
   release:
-    types:
-      - published
+    types: [published]
   workflow_dispatch:
 
 jobs:
-  build-and-push:
-    name: Build multi-arch image
+  discover-variants:
+    name: Discover variants
+    runs-on: ubuntu-latest
+    outputs:
+      variants: ${{ steps.list.outputs.variants }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: list
+        run: |
+          variants=$(ls -1 variants | jq -R . | jq -s -c .)
+          echo "variants=$variants" >> "$GITHUB_OUTPUT"
+          echo "Discovered variants: $variants"
+
+  build-base:
+    name: Build base image
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
-      # ── Checkout ────────────────────────────────────────────────────────────
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      # ── QEMU (cross-platform emulation) ─────────────────────────────────────
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      # ── Buildx (multi-arch build driver) ────────────────────────────────────
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      # ── Log in to GitHub Container Registry ─────────────────────────────────
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
+      - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/mk0e/ccbox-base:latest
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,scope=base,mode=max
 
-      # ── Derive image tags ────────────────────────────────────────────────────
-      # • push/schedule → latest
-      # • release       → <version-tag>  +  latest
-      - name: Extract Docker metadata
+  build-variants:
+    name: Build variant ${{ matrix.variant }}
+    needs: [discover-variants, build-base]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJson(needs.discover-variants.outputs.variants) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract tags
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/mk0e/ccbox
           tags: |
-            # Always publish `latest` on main pushes and nightly builds
-            type=raw,value=latest,enable=${{ github.event_name != 'release' }}
-            # On a release event, publish the semver tag (e.g. v1.2.3, 1.2.3)
-            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
-            type=semver,pattern=v{{version}},enable=${{ github.event_name == 'release' }}
-            # Also keep `latest` up to date on release
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-
-      # ── Build and push ───────────────────────────────────────────────────────
+            type=raw,value=${{ matrix.variant }},enable=${{ github.event_name != 'release' }}
+            type=semver,pattern={{version}}-${{ matrix.variant }},enable=${{ github.event_name == 'release' }}
+            type=raw,value=latest,enable=${{ matrix.variant == 'docs' && github.event_name != 'release' }}
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
           context: .
+          file: variants/${{ matrix.variant }}/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          build-args: |
+            BASE_IMAGE=ghcr.io/mk0e/ccbox-base:latest
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,scope=${{ matrix.variant }},mode=max
