@@ -4,6 +4,10 @@
 # Requires ccbox-base:latest to be built first.
 # ==============================================================================
 
+# Global ARG — must be declared before the first FROM so it can be referenced
+# in any subsequent FROM line.
+ARG BASE_IMAGE=ccbox-base:latest
+
 # ---------- Stage 1: Clone skills ----------
 FROM docker.io/alpine/git:latest AS skills
 ARG SKILLS_REF=main
@@ -11,7 +15,6 @@ RUN git clone --depth 1 --branch ${SKILLS_REF} \
     https://github.com/anthropics/skills.git /tmp/skills
 
 # ---------- Stage 2: Layer doc tools onto the base ----------
-ARG BASE_IMAGE=ccbox-base:latest
 FROM ${BASE_IMAGE}
 
 LABEL org.opencontainers.image.description="ccbox variant: document generation (PDF, PPTX, XLSX, DOCX)"
