@@ -118,9 +118,12 @@ COPY --from=skills /tmp/skills/skills/skill-creator  /opt/ccbox/skills/skill-cre
 RUN curl -fsSL https://code-server.dev/install.sh | sh
 
 # ---------- VS Code extensions (via code-server) ----------
-RUN code-server --extensions-dir /opt/ccbox/code-server-extensions \
-    --install-extension Anthropic.claude-code \
-    --install-extension cweijan.vscode-office
+RUN for i in 1 2 3; do \
+      code-server --extensions-dir /opt/ccbox/code-server-extensions \
+        --install-extension Anthropic.claude-code \
+        --install-extension cweijan.vscode-office \
+      && break || { echo "Attempt $i failed, retrying in 5s..."; sleep 5; }; \
+    done
 
 # ---------- ccbox welcome extension ----------
 COPY welcome-extension /tmp/welcome-extension
