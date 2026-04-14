@@ -9,7 +9,7 @@ ccbox runs [Claude Code](https://docs.anthropic.com/en/docs/claude-code) inside 
 **Install:**
 
 ```bash
-curl -fsSL https://gist.githubusercontent.com/moritzbutzmann/1f56e91a18371cb7a7332b4a889bdc72/raw/cc-box-install.sh | bash
+curl -fsSL https://github.com/mk0e/ccbox/blob/main/install.sh | bash
 ```
 
 The installer sets up the `ccbox` command and walks you through authentication. You'll need Docker (or Podman) running.
@@ -173,8 +173,8 @@ Or add globally (available in all sessions):
 Pre-built multi-arch images are published to the GitHub Container Registry:
 
 ```
-ghcr.io/moritzbutzmann/ccbox:latest          # latest stable build
-ghcr.io/moritzbutzmann/ccbox:v1.2.3          # specific release
+ghcr.io/mk0e/ccbox:latest          # latest stable build
+ghcr.io/mk0e/ccbox:v1.2.3          # specific release
 ```
 
 ### Supported architectures
