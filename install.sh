@@ -11,16 +11,28 @@ set -e
 #   curl -fsSL https://unitedunicorns.org/gitlab/techboard/ccbox/-/raw/main/install.sh | bash
 # ==============================================================================
 
+# ---------- Variant helpers ----------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib/variants.sh"
+
 CCBOX_DATA="$HOME/.ccbox"
 CCBOX_CONFIG="$HOME/.config/ccbox"
 AUTH_ENV="$CCBOX_CONFIG/auth.env"
+REGISTRY_FILE="$CCBOX_DATA/workspaces.json"
 
 # ---------- Arg parsing ----------
 BUILD_LOCAL=false
-for arg in "$@"; do
-    case "$arg" in
-        --build) BUILD_LOCAL=true ;;
-        *) printf "Unknown option: %s\n" "$arg" >&2; exit 1 ;;
+ACTION_ADD=""
+ACTION_REMOVE=""
+ACTION_UPDATE=false
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --build)  BUILD_LOCAL=true; shift ;;
+        --add)    ACTION_ADD="$2";    shift 2 ;;
+        --remove) ACTION_REMOVE="$2"; shift 2 ;;
+        --update) ACTION_UPDATE=true; shift ;;
+        *) printf "Unknown option: %s\n" "$1" >&2; exit 1 ;;
     esac
 done
 
@@ -362,6 +374,149 @@ configure_auth() {
     esac
 }
 
+# ---------- Variant selection ----------
+select_variants() {
+    WANTED_VARIANTS=()
+    local available=()
+    mapfile -t available < <(list_variants "$SCRIPT_DIR/variants")
+    if [ "${#available[@]}" -eq 0 ]; then
+        info "No variants found under variants/ — aborting."
+        exit 1
+    fi
+
+    registry_load "$REGISTRY_FILE"
+    local preselected=("${REGISTRY_INSTALLED[@]}")
+    if [ "${#preselected[@]}" -eq 0 ]; then
+        preselected=("docs")
+    fi
+
+    info ""
+    info "Which workspaces do you want installed?"
+    info "Enter comma-separated numbers. Current selection is shown in [ ]."
+    local i=1 name desc marker
+    declare -A index_to_name=()
+    for name in "${available[@]}"; do
+        desc="$(get_variant_field "$SCRIPT_DIR/variants/$name/workspace.env" description)"
+        marker=" "
+        local p
+        for p in "${preselected[@]}"; do
+            [ "$p" = "$name" ] && marker="x"
+        done
+        info "  [$marker] $i) $name — $desc"
+        index_to_name[$i]="$name"
+        i=$((i + 1))
+    done
+    info ""
+    prompt "> "
+
+    if [ -z "$REPLY" ]; then
+        WANTED_VARIANTS=("${preselected[@]}")
+        return 0
+    fi
+
+    local IFS=','
+    local token
+    for token in $REPLY; do
+        token="${token// /}"
+        if [ -n "${index_to_name[$token]:-}" ]; then
+            WANTED_VARIANTS+=("${index_to_name[$token]}")
+        else
+            info "Ignoring invalid selection: $token"
+        fi
+    done
+}
+
+# ---------- Per-variant image operations ----------
+variant_image() { printf 'ghcr.io/mk0e/ccbox:%s\n' "$1"; }
+
+pull_variant() {
+    local name="$1"
+    local image; image="$(variant_image "$name")"
+    if "$RUNTIME" image inspect "$image" &>/dev/null; then
+        return 0
+    fi
+    info ""
+    info "Pulling $image ..."
+    if "$RUNTIME" pull "$image" > /dev/tty 2>&1; then
+        info "Pulled $image."
+    else
+        info "Warning: could not pull $image. It will be pulled on first use."
+    fi
+}
+
+force_pull_variant() {
+    local name="$1"
+    local image; image="$(variant_image "$name")"
+    info ""
+    info "Pulling $image from remote..."
+    if ! "$RUNTIME" pull "$image" > /dev/tty 2>&1; then
+        info "Error: could not pull $image."
+        exit 1
+    fi
+    info "Updated $image."
+}
+
+build_variant() {
+    local name="$1"
+    local dockerfile="$SCRIPT_DIR/variants/$name/Dockerfile"
+    local image; image="$(variant_image "$name")"
+    if [ ! -f "$dockerfile" ]; then
+        info "No Dockerfile found for variant '$name' at $dockerfile — skipping."
+        return 1
+    fi
+    info "Building $image locally..."
+    "$RUNTIME" build -t ccbox-base:latest "$SCRIPT_DIR"
+    "$RUNTIME" build -t "$image" -f "$dockerfile" "$SCRIPT_DIR"
+    info "Built $image."
+}
+
+apply_variant_selection() {
+    local previously=()
+    registry_load "$REGISTRY_FILE"
+    previously=("${REGISTRY_INSTALLED[@]}")
+
+    local name
+    for name in "${WANTED_VARIANTS[@]}"; do
+        if $BUILD_LOCAL; then
+            build_variant "$name" || continue
+        else
+            pull_variant "$name"
+        fi
+        registry_add "$REGISTRY_FILE" "$name"
+    done
+
+    for name in "${previously[@]}"; do
+        local keep=false p
+        for p in "${WANTED_VARIANTS[@]}"; do
+            [ "$p" = "$name" ] && keep=true
+        done
+        if ! $keep; then
+            registry_remove "$REGISTRY_FILE" "$name"
+            info "Removed $name from registry."
+        fi
+    done
+
+    registry_load "$REGISTRY_FILE"
+    local new_default="${REGISTRY_INSTALLED[0]:-}"
+    local n
+    for n in "${REGISTRY_INSTALLED[@]}"; do
+        [ "$n" = "docs" ] && new_default="docs"
+    done
+    if [ -n "$new_default" ]; then
+        registry_write "$REGISTRY_FILE" "$new_default" "${REGISTRY_INSTALLED[@]}"
+    fi
+
+    # Snapshot each installed variant's workspace.env into ~/.ccbox/variants/
+    # so the shell function can read metadata without sourcing lib/variants.sh.
+    mkdir -p "$CCBOX_DATA/variants"
+    registry_load "$REGISTRY_FILE"
+    for n in "${REGISTRY_INSTALLED[@]}"; do
+        if [ -f "$SCRIPT_DIR/variants/$n/workspace.env" ]; then
+            cp "$SCRIPT_DIR/variants/$n/workspace.env" "$CCBOX_DATA/variants/$n.env"
+        fi
+    done
+}
+
 # ---------- Build local image ----------
 build_local_image() {
     if [ ! -f "Dockerfile" ]; then
@@ -434,35 +589,47 @@ do_already_installed() {
     info ""
     info "ccbox is already set up."
     info "Auth: $(auth_label)"
+    registry_load "$REGISTRY_FILE"
+    info "Installed workspaces: ${REGISTRY_INSTALLED[*]:-none}"
     info ""
     info "  1) Update ccbox command"
-    info "  2) Update ccbox image - pull from remote"
-    info "  3) Update ccbox image - build from source"
-    info "  4) Change how I log in"
-    info "  5) Remove ccbox"
+    info "  2) Update installed images (pull from remote)"
+    info "  3) Update installed images (build from source)"
+    info "  4) Add or remove workspaces"
+    info "  5) Change how I log in"
+    info "  6) Remove ccbox"
     info ""
     prompt "> "
 
     case "$REPLY" in
         1)
             install_function
-            info ""
             info "ccbox command updated. Close this terminal and open a new one."
             ;;
         2)
-            force_pull_image
+            registry_load "$REGISTRY_FILE"
+            for name in "${REGISTRY_INSTALLED[@]}"; do
+                force_pull_variant "$name"
+            done
             ;;
         3)
-            build_local_image
+            BUILD_LOCAL=true
+            registry_load "$REGISTRY_FILE"
+            WANTED_VARIANTS=("${REGISTRY_INSTALLED[@]}")
+            apply_variant_selection
             ;;
         4)
+            select_variants
+            apply_variant_selection
+            install_function
+            ;;
+        5)
             configure_auth
             install_function
-            info ""
             info "Done! Close this terminal, open a new one, then run: ccbox"
             [ -n "${AUTH_HINT:-}" ] && info "$AUTH_HINT"
             ;;
-        5)
+        6)
             do_uninstall
             ;;
         *)
@@ -497,20 +664,60 @@ do_first_run() {
 detect_runtime
 detect_shell
 
-is_installed=false
-if [ "$CURRENT_SHELL" = "fish" ]; then
-    [ -f "$RC_FILE" ] && grep -q '# >>> ccbox >>>' "$RC_FILE" 2>/dev/null && is_installed=true
-else
-    [ -f "$RC_FILE" ] && grep -q '# >>> ccbox >>>' "$RC_FILE" 2>/dev/null && is_installed=true
+# Non-interactive shortcuts
+if [ -n "$ACTION_ADD" ]; then
+    if [ ! -d "$SCRIPT_DIR/variants/$ACTION_ADD" ]; then
+        info "Unknown variant: $ACTION_ADD"
+        info "Available variants:"
+        list_variants "$SCRIPT_DIR/variants" | sed 's/^/  /'
+        exit 1
+    fi
+    registry_load "$REGISTRY_FILE"
+    WANTED_VARIANTS=("${REGISTRY_INSTALLED[@]}" "$ACTION_ADD")
+    apply_variant_selection
+    install_function
+    info "Added $ACTION_ADD."
+    exit 0
 fi
 
+if [ -n "$ACTION_REMOVE" ]; then
+    registry_load "$REGISTRY_FILE"
+    WANTED_VARIANTS=()
+    for v in "${REGISTRY_INSTALLED[@]}"; do
+        [ "$v" != "$ACTION_REMOVE" ] && WANTED_VARIANTS+=("$v")
+    done
+    apply_variant_selection
+    install_function
+    info "Removed $ACTION_REMOVE."
+    exit 0
+fi
+
+if $ACTION_UPDATE; then
+    registry_load "$REGISTRY_FILE"
+    for name in "${REGISTRY_INSTALLED[@]}"; do
+        force_pull_variant "$name"
+    done
+    install_function
+    info "Update complete."
+    exit 0
+fi
+
+# Interactive flow
+is_installed=false
+[ -f "$RC_FILE" ] && grep -q '# >>> ccbox >>>' "$RC_FILE" 2>/dev/null && is_installed=true
+
 if $is_installed; then
-    # Always update the function silently
     check_existing_ccbox
     install_function
     do_already_installed
 else
     check_existing_ccbox
     mkdir -p "$CCBOX_DATA"
-    do_first_run
+    configure_auth
+    select_variants
+    apply_variant_selection
+    install_function
+    info ""
+    info "ccbox is ready! Close this terminal, open a new one, then run: ccbox"
+    [ -n "${AUTH_HINT:-}" ] && info "$AUTH_HINT"
 fi
