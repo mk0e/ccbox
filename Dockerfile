@@ -122,8 +122,8 @@ RUN for i in 1 2 3; do \
       code-server --extensions-dir /opt/ccbox/code-server-extensions \
         --install-extension Anthropic.claude-code \
         --install-extension cweijan.vscode-office \
-      && break || { echo "Attempt $i failed, retrying in 5s..."; sleep 5; }; \
-    done
+      && exit 0 || { echo "Attempt $i failed, retrying in 5s..."; sleep 5; }; \
+    done; exit 1
 
 # ---------- ccbox welcome extension ----------
 COPY welcome-extension /tmp/welcome-extension
