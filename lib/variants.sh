@@ -44,3 +44,85 @@ variant_image_tag() {
 variant_container_name() {
     printf 'ccbox-%s\n' "$1"
 }
+
+# ---------- Registry helpers (~/.ccbox/workspaces.json) ----------
+# Schema: {"installed": ["name", ...], "default": "name"}
+# We produce canonical JSON ourselves and parse it with sed — no jq dependency.
+
+# Usage: registry_write <file> <default> [installed...]
+registry_write() {
+    local file="$1" default="$2"; shift 2
+    local installed=("$@")
+    local dir; dir="$(dirname "$file")"
+    mkdir -p "$dir"
+    {
+        printf '{\n'
+        printf '  "installed": ['
+        local first=1 v
+        for v in "${installed[@]}"; do
+            if [ "$first" -eq 1 ]; then first=0; else printf ', '; fi
+            printf '"%s"' "$v"
+        done
+        printf '],\n'
+        printf '  "default": "%s"\n' "$default"
+        printf '}\n'
+    } > "$file"
+}
+
+# Loads the installed list into REGISTRY_INSTALLED (array) and REGISTRY_DEFAULT (string).
+# Creates an empty registry-state if the file doesn't exist.
+registry_load() {
+    local file="$1"
+    REGISTRY_INSTALLED=()
+    REGISTRY_DEFAULT=""
+    if [ ! -f "$file" ]; then
+        return 0
+    fi
+    local installed_line
+    installed_line="$(sed -n 's/.*"installed": *\[\([^]]*\)\].*/\1/p' "$file")"
+    if [ -n "$installed_line" ]; then
+        local IFS=','
+        local raw
+        for raw in $installed_line; do
+            raw="${raw// /}"
+            raw="${raw//\"/}"
+            [ -n "$raw" ] && REGISTRY_INSTALLED+=("$raw")
+        done
+    fi
+    REGISTRY_DEFAULT="$(sed -n 's/.*"default": *"\([^"]*\)".*/\1/p' "$file")"
+}
+
+registry_is_installed() {
+    local file="$1" name="$2"
+    registry_load "$file"
+    local v
+    for v in "${REGISTRY_INSTALLED[@]}"; do
+        [ "$v" = "$name" ] && return 0
+    done
+    return 1
+}
+
+registry_add() {
+    local file="$1" name="$2"
+    registry_load "$file"
+    if registry_is_installed "$file" "$name"; then
+        return 0
+    fi
+    REGISTRY_INSTALLED+=("$name")
+    local default="${REGISTRY_DEFAULT:-$name}"
+    registry_write "$file" "$default" "${REGISTRY_INSTALLED[@]}"
+}
+
+registry_remove() {
+    local file="$1" name="$2"
+    registry_load "$file"
+    local new=() v
+    for v in "${REGISTRY_INSTALLED[@]}"; do
+        [ "$v" != "$name" ] && new+=("$v")
+    done
+    local default="$REGISTRY_DEFAULT"
+    if [ "$default" = "$name" ]; then
+        default="${new[0]:-}"
+    fi
+    registry_write "$file" "$default" "${new[@]}"
+}
