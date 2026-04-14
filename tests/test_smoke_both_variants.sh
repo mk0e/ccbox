@@ -44,7 +44,7 @@ cd "$TMPCWD"
 # --- Default: docs variant, CWD mount ---
 : > "$DOCKER_LOG"
 ccbox || true
-grep -q 'ccbox:docs' "$DOCKER_LOG" || fail "default should use docs image. log: $(cat "$DOCKER_LOG")"
+grep -q 'ghcr.io/mk0e/ccbox:docs' "$DOCKER_LOG" || fail "default should use docs image. log: $(cat "$DOCKER_LOG")"
 grep -q -- "$TMPCWD:/workspace" "$DOCKER_LOG" || fail "docs mount should be CWD. log: $(cat "$DOCKER_LOG")"
 ok "default dispatches to docs with CWD mount"
 
@@ -53,7 +53,7 @@ ok "default dispatches to docs with CWD mount"
 ccbox diy-news-collector || true
 test -d "$TMPCWD/diy-news-collector" || fail "diy subfolder should have been created"
 grep -q -- "$TMPCWD/diy-news-collector" "$DOCKER_LOG" || fail "diy mount should be the subfolder. log: $(cat "$DOCKER_LOG")"
-grep -q 'ccbox:diy-news-collector' "$DOCKER_LOG" || fail "diy image wrong. log: $(cat "$DOCKER_LOG")"
+grep -q 'ghcr.io/mk0e/ccbox:diy-news-collector' "$DOCKER_LOG" || fail "diy image wrong. log: $(cat "$DOCKER_LOG")"
 ok "diy dispatches with subfolder mount"
 
 # --- Web mode uses declared port 8081 ---
