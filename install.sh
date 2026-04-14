@@ -375,7 +375,7 @@ build_local_image() {
     info "Build complete."
 }
 
-# ---------- Pre-pull image ----------
+# ---------- Pre-pull image (skip if already present) ----------
 pre_pull_image() {
     if "$RUNTIME" image inspect ghcr.io/mk0e/ccbox:latest &>/dev/null; then
         return 0
@@ -388,6 +388,19 @@ pre_pull_image() {
         info ""
         info "Warning: could not pull ccbox image (offline or registry unavailable)."
         info "Install will continue. The image will be pulled on first 'ccbox' run."
+    fi
+}
+
+# ---------- Force pull image (always hits the registry) ----------
+force_pull_image() {
+    info ""
+    info "Pulling ccbox image from remote..."
+    if "$RUNTIME" pull ghcr.io/mk0e/ccbox:latest > /dev/tty 2>&1; then
+        info "Image updated."
+    else
+        info ""
+        info "Error: could not pull ccbox image (offline or registry unavailable)."
+        exit 1
     fi
 }
 
@@ -423,8 +436,10 @@ do_already_installed() {
     info "Auth: $(auth_label)"
     info ""
     info "  1) Update ccbox command"
-    info "  2) Change how I log in"
-    info "  3) Remove ccbox"
+    info "  2) Update ccbox image - pull from remote"
+    info "  3) Update ccbox image - build from source"
+    info "  4) Change how I log in"
+    info "  5) Remove ccbox"
     info ""
     prompt "> "
 
@@ -435,13 +450,19 @@ do_already_installed() {
             info "ccbox command updated. Close this terminal and open a new one."
             ;;
         2)
+            force_pull_image
+            ;;
+        3)
+            build_local_image
+            ;;
+        4)
             configure_auth
             install_function
             info ""
             info "Done! Close this terminal, open a new one, then run: ccbox"
             [ -n "${AUTH_HINT:-}" ] && info "$AUTH_HINT"
             ;;
-        3)
+        5)
             do_uninstall
             ;;
         *)
@@ -458,6 +479,12 @@ do_first_run() {
     configure_auth
     install_function
 
+    if $BUILD_LOCAL; then
+        build_local_image
+    else
+        pre_pull_image
+    fi
+
     info ""
     info "ccbox is ready! Close this terminal, open a new one, then run: ccbox"
     [ -n "${AUTH_HINT:-}" ] && info "$AUTH_HINT"
@@ -469,12 +496,6 @@ do_first_run() {
 
 detect_runtime
 detect_shell
-
-if $BUILD_LOCAL; then
-    build_local_image
-else
-    pre_pull_image
-fi
 
 is_installed=false
 if [ "$CURRENT_SHELL" = "fish" ]; then
