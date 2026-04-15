@@ -76,6 +76,30 @@ if [ ! -L "$CLAUDE_HOME/.claude.json" ]; then
     fi
 fi
 
+# Pre-approve the current ANTHROPIC_API_KEY so Claude Code does not prompt
+# "Detected a custom API key — use it?" on every start. Approval is keyed by
+# the last 20 chars of the key; merge with jq to preserve any other fields.
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    cfg="$CLAUDE_HOME/.claude/.claude.json"
+    key_suffix="${ANTHROPIC_API_KEY: -20}"
+    tmp="$(mktemp)"
+    if jq --arg k "$key_suffix" '
+            .customApiKeyResponses.approved =
+                ((.customApiKeyResponses.approved // [])
+                 | if index($k) then . else . + [$k] end)
+            | .customApiKeyResponses.rejected =
+                (.customApiKeyResponses.rejected // [])
+        ' "$cfg" > "$tmp" 2>/dev/null; then
+        mv "$tmp" "$cfg"
+        if [ "$CURRENT_UID" = "0" ]; then
+            try_chown "$PUID:$PGID" "$cfg"
+        fi
+    else
+        rm -f "$tmp"
+        echo "[ccbox] Warning: failed to pre-approve API key in .claude.json"
+    fi
+fi
+
 # ---------- code-server first-boot setup ----------
 if [ "$1" = "web" ]; then
     CS_DATA="$CLAUDE_HOME/.local/share/code-server"
