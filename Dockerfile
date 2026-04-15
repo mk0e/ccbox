@@ -132,6 +132,15 @@ RUN cd /tmp/welcome-extension && npx --yes @vscode/vsce package --allow-missing-
     && rm -rf /tmp/welcome-extension /tmp/ccbox-welcome.vsix
 RUN chmod -R a+rX /opt/ccbox/code-server-extensions
 
+# ---------- Normalize /home/claude ownership ----------
+# Several earlier steps ran as root and created subdirectories (e.g.
+# /home/claude/.local/bin) owned by root:root. That's harmless under Docker
+# because the entrypoint chowns everything before dropping to claude, but
+# under rootless Podman with --userns=keep-id, container UID 0 is in the
+# subuid range and claude (UID 1000) cannot write to those dirs. Fix it at
+# build time so the image is consistent for both runtimes.
+RUN chown -R claude:claude /home/claude
+
 # ---------- Copy config ----------
 COPY CLAUDE.md     /opt/ccbox/CLAUDE.md
 COPY settings.json /opt/ccbox/settings.json
