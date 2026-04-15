@@ -107,19 +107,30 @@ PYEOF
     if [ ! -d "$CS_EXTENSIONS" ]; then
         cp -r /opt/ccbox/code-server-extensions "$CS_EXTENSIONS"
     fi
-    chown -R "$PUID:$PGID" "$CS_DATA"
+    if [ "$CURRENT_UID" = "0" ]; then
+        try_chown -R "$PUID:$PGID" "$CS_DATA"
+    fi
 
     echo "[ccbox] Starting web UI..."
     export HOME="$CLAUDE_HOME"
     cd /workspace
-    exec sudo -u claude \
-        --preserve-env=HOME,PATH,NODE_PATH,NODE_OPTIONS,ANTHROPIC_API_KEY,ANTHROPIC_BASE_URL,CLAUDE_CODE_USE_BEDROCK,AWS_PROFILE,AWS_REGION,CLAUDE_CODE_USE_VERTEX,GOOGLE_CLOUD_PROJECT \
-        code-server \
-        --bind-addr 0.0.0.0:8080 \
-        --auth none \
-        --disable-telemetry \
-        --extensions-dir "$CS_DATA/extensions" \
-        /workspace
+    if [ "$CURRENT_UID" = "0" ]; then
+        exec sudo -u claude \
+            --preserve-env=HOME,PATH,NODE_PATH,NODE_OPTIONS,ANTHROPIC_API_KEY,ANTHROPIC_BASE_URL,CLAUDE_CODE_USE_BEDROCK,AWS_PROFILE,AWS_REGION,CLAUDE_CODE_USE_VERTEX,GOOGLE_CLOUD_PROJECT \
+            code-server \
+            --bind-addr 0.0.0.0:8080 \
+            --auth none \
+            --disable-telemetry \
+            --extensions-dir "$CS_DATA/extensions" \
+            /workspace
+    else
+        exec code-server \
+            --bind-addr 0.0.0.0:8080 \
+            --auth none \
+            --disable-telemetry \
+            --extensions-dir "$CS_DATA/extensions" \
+            /workspace
+    fi
 fi
 
 # ---------- Exec ----------
