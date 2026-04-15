@@ -6,18 +6,32 @@ set -e
 # ==============================================================================
 
 CLAUDE_HOME="/home/claude"
-PUID="${PUID:-1000}"
-PGID="${PGID:-1000}"
+CURRENT_UID="$(id -u)"
 
-# ---------- UID/GID remapping ----------
-if [ "$(id -u claude)" != "$PUID" ] || [ "$(id -g claude)" != "$PGID" ]; then
-    groupmod -o -g "$PGID" claude 2>/dev/null || true
-    usermod -o -u "$PUID" claude 2>/dev/null || true
+# chown can fail silently on bind mounts backed by virtiofs/9p (macOS Docker
+# Desktop, podman machine). Try it, but do not abort on failure — the root
+# path's contract is "best-effort ownership fixup," not "mounts must be chown-able."
+try_chown() { chown "$@" 2>/dev/null || true; }
+
+# ---------- Root-mode setup (Docker / rootful Podman) ----------
+# When started by rootless Podman with --userns=keep-id:uid=1000,gid=1000,
+# PID 1 is already the claude user (UID 1000) and we skip all of this. The
+# shell launcher in install.sh passes --userns=keep-id in that case.
+if [ "$CURRENT_UID" = "0" ]; then
+    PUID="${PUID:-1000}"
+    PGID="${PGID:-1000}"
+
+    if [ "$(id -u claude)" != "$PUID" ] || [ "$(id -g claude)" != "$PGID" ]; then
+        groupmod -o -g "$PGID" claude 2>/dev/null || true
+        usermod  -o -u "$PUID" claude 2>/dev/null || true
+    fi
+
+    mkdir -p "$CLAUDE_HOME/.claude/skills" /workspace
+    try_chown "$PUID:$PGID" "$CLAUDE_HOME" "$CLAUDE_HOME/.claude" "$CLAUDE_HOME/.claude/skills" /workspace
+else
+    # Rootless Podman keep-id: container is already claude, mounts already owned correctly.
+    mkdir -p "$CLAUDE_HOME/.claude/skills" /workspace 2>/dev/null || true
 fi
-
-# ---------- Ensure directories ----------
-mkdir -p "$CLAUDE_HOME/.claude/skills" /workspace
-chown "$PUID:$PGID" "$CLAUDE_HOME" "$CLAUDE_HOME/.claude" "$CLAUDE_HOME/.claude/skills" /workspace
 
 # ---------- First-boot setup ----------
 if [ ! -f "$CLAUDE_HOME/.claude/.ccbox-init" ]; then
