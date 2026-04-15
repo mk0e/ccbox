@@ -475,7 +475,9 @@ configure_auth() {
 select_variants() {
     WANTED_VARIANTS=()
     local available=()
-    mapfile -t available < <(list_variants "$SCRIPT_DIR/variants")
+    while IFS= read -r __v; do
+        available+=("$__v")
+    done < <(list_variants "$SCRIPT_DIR/variants")
     if [ "${#available[@]}" -eq 0 ]; then
         info "No variants found under variants/ — aborting."
         exit 1
@@ -491,7 +493,7 @@ select_variants() {
     info "Which workspaces do you want installed?"
     info "Enter comma-separated numbers. Current selection is shown in [ ]."
     local i=1 name desc marker
-    declare -A index_to_name=()
+    local index_to_name=()
     for name in "${available[@]}"; do
         desc="$(get_variant_field "$SCRIPT_DIR/variants/$name/workspace.env" description)"
         marker=" "
