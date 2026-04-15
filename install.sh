@@ -195,7 +195,7 @@ function ccbox --description "Run ccbox container"
         set -l args run --rm -p "127.0.0.1:$port:8080" \
             -v (pwd):/workspace \
             -v $HOME/.ccbox:/home/claude/.claude \
-            -e "PUID=(id -u)" -e "PGID=(id -g)"
+            -e "PUID="(id -u) -e "PGID="(id -g)
         test -n "$api_key";  and set -a args -e "ANTHROPIC_API_KEY=$api_key"
         test -n "$base_url"; and set -a args -e "ANTHROPIC_BASE_URL=$base_url"
         echo "ccbox is running at http://localhost:$port"
@@ -206,7 +206,7 @@ function ccbox --description "Run ccbox container"
     set -l args run -it --rm \
         -v (pwd):/workspace \
         -v $HOME/.ccbox:/home/claude/.claude \
-        -e "PUID=(id -u)" -e "PGID=(id -g)"
+        -e "PUID="(id -u) -e "PGID="(id -g)
     test -n "$api_key";  and set -a args -e "ANTHROPIC_API_KEY=$api_key"
     test -n "$base_url"; and set -a args -e "ANTHROPIC_BASE_URL=$base_url"
     $runtime $args ghcr.io/mk0e/ccbox:latest $argv
