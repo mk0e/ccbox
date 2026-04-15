@@ -8,7 +8,7 @@ set -e
 #
 # Usage:
 #   ./install.sh
-#   curl -fsSL https://unitedunicorns.org/gitlab/techboard/ccbox/-/raw/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/mk0e/ccbox/main/install.sh | bash
 # ==============================================================================
 
 # ---------- Variant helpers ----------
