@@ -80,7 +80,8 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
     && cp /root/.local/bin/claude /usr/local/bin/claude \
     && cp -r /root/.local/share/claude /usr/local/share/claude \
     && mkdir -p /home/claude/.local/bin \
-    && ln -sf /usr/local/bin/claude /home/claude/.local/bin/claude
+    && ln -sf /usr/local/bin/claude /home/claude/.local/bin/claude \
+    && chown -R claude:claude /home/claude/.local
 
 # ---------- Node packages (global) ----------
 RUN npm i -g \
