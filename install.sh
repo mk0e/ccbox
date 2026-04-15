@@ -199,6 +199,7 @@ function ccbox --description "Run ccbox container"
             return
         end
         set -l args run --rm -p "127.0.0.1:$port:8080" \
+            -p "127.0.0.1:4200-4250:4200-4250" \
             $userns_args \
             -v (pwd):/workspace \
             -v $HOME/.ccbox:/home/claude/.claude \
@@ -286,6 +287,7 @@ ccbox() {
             return
         fi
         local args=(run --rm -p "127.0.0.1:$port:8080"
+            -p "127.0.0.1:4200-4250:4200-4250"
             "${userns_args[@]}"
             -v "$(pwd)":/workspace
             -v "$HOME/.ccbox":/home/claude/.claude

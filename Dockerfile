@@ -53,6 +53,7 @@ RUN sed -i '/en_US.UTF-8/s/^# //g' /etc/locale.gen && locale-gen
 
 # ---------- Python packages ----------
 RUN pip install --no-cache-dir --break-system-packages \
+    uv \
     pypdf \
     pdfplumber \
     reportlab \
@@ -143,6 +144,7 @@ RUN libreoffice --version && \
     qpdf --version && \
     pandoc --version && \
     pdftk --version && \
+    uv --version && \
     python3 -c "import pypdf, pdfplumber, reportlab, pypdfium2, pytesseract, pdf2image, pandas, openpyxl, PIL, pptx, docx, lxml, defusedxml, markitdown, matplotlib" && \
     node -e "require('pptxgenjs'); require('pdf-lib'); require('docx'); require('sharp'); require('react'); require('react-dom')" && \
     claude --version && \

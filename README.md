@@ -48,6 +48,10 @@ ccbox web 3000
 ccbox stop
 ```
 
+**Exposing dev server ports:**
+
+`ccbox web` also publishes host ports `4200–4250` into the container, so you can run a frontend dev server (e.g. `ng serve`, Vite) inside ccbox and reach it from your host browser at `http://localhost:4200`. Bind servers to `0.0.0.0` inside the container (e.g. `ng serve --host 0.0.0.0`) — the default `localhost` bind is not reachable from outside the container.
+
 ## How it works
 
 ```
