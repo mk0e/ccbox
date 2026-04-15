@@ -154,6 +154,14 @@ function ccbox --description "Run ccbox container"
         echo "ccbox: docker or podman is required but not found." >&2
         return 1
     end
+    # Rootless Podman needs --userns=keep-id so the host user maps to the
+    # in-container claude user (UID 1000). Detect: podman + non-root invoker.
+    set -l userns_args
+    set -l uidgid_args -e "PUID="(id -u) -e "PGID="(id -g)
+    if test "$runtime" = "podman"; and test (id -u) != "0"
+        set userns_args --userns=keep-id:uid=1000,gid=1000
+        set uidgid_args
+    end
     set -l api_key "$ANTHROPIC_API_KEY"
     set -l base_url "$ANTHROPIC_BASE_URL"
     if test -z "$api_key"; and test -f "$HOME/.config/ccbox/auth.env"
@@ -193,9 +201,10 @@ function ccbox --description "Run ccbox container"
             return
         end
         set -l args run --rm -p "127.0.0.1:$port:8080" \
+            $userns_args \
             -v (pwd):/workspace \
             -v $HOME/.ccbox:/home/claude/.claude \
-            -e "PUID="(id -u) -e "PGID="(id -g)
+            $uidgid_args
         test -n "$api_key";  and set -a args -e "ANTHROPIC_API_KEY=$api_key"
         test -n "$base_url"; and set -a args -e "ANTHROPIC_BASE_URL=$base_url"
         echo "ccbox is running at http://localhost:$port"
@@ -204,9 +213,10 @@ function ccbox --description "Run ccbox container"
         return
     end
     set -l args run -it --rm \
+        $userns_args \
         -v (pwd):/workspace \
         -v $HOME/.ccbox:/home/claude/.claude \
-        -e "PUID="(id -u) -e "PGID="(id -g)
+        $uidgid_args
     test -n "$api_key";  and set -a args -e "ANTHROPIC_API_KEY=$api_key"
     test -n "$base_url"; and set -a args -e "ANTHROPIC_BASE_URL=$base_url"
     $runtime $args ghcr.io/mk0e/ccbox:latest $argv
