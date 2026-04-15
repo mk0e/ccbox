@@ -60,7 +60,9 @@ fi
 
 # ---------- Sync skills (every boot, no-clobber) ----------
 cp -rn /opt/ccbox/skills/* "$CLAUDE_HOME/.claude/skills/" 2>/dev/null || true
-chown -R "$PUID:$PGID" "$CLAUDE_HOME/.claude/skills"
+if [ "$CURRENT_UID" = "0" ]; then
+    try_chown -R "$PUID:$PGID" "$CLAUDE_HOME/.claude/skills"
+fi
 
 # ---------- Persist .claude.json ----------
 # Claude Code stores auth state in ~/.claude.json (outside ~/.claude/).
@@ -69,7 +71,9 @@ if [ ! -L "$CLAUDE_HOME/.claude.json" ]; then
     rm -f "$CLAUDE_HOME/.claude.json"
     [ ! -s "$CLAUDE_HOME/.claude/.claude.json" ] && echo '{}' > "$CLAUDE_HOME/.claude/.claude.json"
     ln -sf "$CLAUDE_HOME/.claude/.claude.json" "$CLAUDE_HOME/.claude.json"
-    chown "$PUID:$PGID" "$CLAUDE_HOME/.claude/.claude.json"
+    if [ "$CURRENT_UID" = "0" ]; then
+        try_chown "$PUID:$PGID" "$CLAUDE_HOME/.claude/.claude.json"
+    fi
 fi
 
 # ---------- code-server first-boot setup ----------
@@ -118,9 +122,13 @@ PYEOF
         /workspace
 fi
 
-# ---------- Exec as claude user ----------
+# ---------- Exec ----------
 export HOME="$CLAUDE_HOME"
 cd /workspace
-exec sudo -u claude \
-    --preserve-env=HOME,PATH,NODE_PATH,NODE_OPTIONS,ANTHROPIC_API_KEY,ANTHROPIC_BASE_URL,CLAUDE_CODE_USE_BEDROCK,AWS_PROFILE,AWS_REGION,CLAUDE_CODE_USE_VERTEX,GOOGLE_CLOUD_PROJECT \
-    "$@"
+if [ "$CURRENT_UID" = "0" ]; then
+    exec sudo -u claude \
+        --preserve-env=HOME,PATH,NODE_PATH,NODE_OPTIONS,ANTHROPIC_API_KEY,ANTHROPIC_BASE_URL,CLAUDE_CODE_USE_BEDROCK,AWS_PROFILE,AWS_REGION,CLAUDE_CODE_USE_VERTEX,GOOGLE_CLOUD_PROJECT \
+        "$@"
+else
+    exec "$@"
+fi
