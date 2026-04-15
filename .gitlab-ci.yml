@@ -3,10 +3,12 @@ stages:
   - publish
 
 # ------------------------------------------------------------------------------
-# build-check — validates the base + every variant Dockerfile builds (no push)
+# build-check — validates base + variant Dockerfiles build (no push)
+# Base is rebuilt inside each variant job because each GitLab job gets its
+# own fresh dind service, so cross-job image sharing isn't possible.
 # Runs on every commit and merge request.
 # ------------------------------------------------------------------------------
-build-check-base:
+build-check:
   stage: validate
   image: docker:27
   services:
@@ -15,25 +17,8 @@ build-check-base:
     DOCKER_TLS_CERTDIR: "/certs"
     DOCKER_BUILDKIT: "1"
   script:
-    - docker buildx create --use --name check
-    - docker buildx build --platform linux/amd64 -t ccbox-base:latest --load .
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH
-
-build-check-variant:
-  stage: validate
-  image: docker:27
-  services:
-    - docker:27-dind
-  needs:
-    - build-check-base
-  variables:
-    DOCKER_TLS_CERTDIR: "/certs"
-    DOCKER_BUILDKIT: "1"
-  script:
-    - docker buildx create --use --name check
-    - docker buildx build --platform linux/amd64 -f variants/$VARIANT/Dockerfile --build-arg BASE_IMAGE=ccbox-base:latest .
+    - docker build -t ccbox-base:latest .
+    - docker build -f variants/$VARIANT/Dockerfile --build-arg BASE_IMAGE=ccbox-base:latest .
   parallel:
     matrix:
       - VARIANT: [docs, diy-news-collector]
