@@ -37,17 +37,24 @@ fi
 if [ ! -f "$CLAUDE_HOME/.claude/.ccbox-init" ]; then
     echo "[ccbox] First boot — setting up config..."
 
-    cp -n /opt/ccbox/CLAUDE.md "$CLAUDE_HOME/.claude/CLAUDE.md" 2>/dev/null || true
-    cp -n /opt/ccbox/settings.json "$CLAUDE_HOME/.claude/settings.json" 2>/dev/null || true
+    cp -n /opt/ccbox/CLAUDE.md /opt/ccbox/settings.json "$CLAUDE_HOME/.claude/" 2>/dev/null || true
 
-    su -s /bin/bash claude -c "
+    if [ "$CURRENT_UID" = "0" ]; then
+        su -s /bin/bash claude -c "
+            git config --global --add safe.directory /workspace
+            git config --global user.name '${GIT_USER_NAME:-Claude}'
+            git config --global user.email '${GIT_USER_EMAIL:-claude@ccbox}'
+        "
+    else
         git config --global --add safe.directory /workspace
-        git config --global user.name '${GIT_USER_NAME:-Claude}'
-        git config --global user.email '${GIT_USER_EMAIL:-claude@ccbox}'
-    "
+        git config --global user.name "${GIT_USER_NAME:-Claude}"
+        git config --global user.email "${GIT_USER_EMAIL:-claude@ccbox}"
+    fi
 
     touch "$CLAUDE_HOME/.claude/.ccbox-init"
-    chown -R "$PUID:$PGID" "$CLAUDE_HOME"
+    if [ "$CURRENT_UID" = "0" ]; then
+        try_chown -R "$PUID:$PGID" "$CLAUDE_HOME"
+    fi
     echo "[ccbox] First boot complete."
 fi
 
