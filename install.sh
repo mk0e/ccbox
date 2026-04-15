@@ -365,6 +365,17 @@ do_uninstall() {
             rm -rf "$CCBOX_DATA" "$CCBOX_CONFIG"
             ;;
     esac
+    if "$RUNTIME" image inspect ghcr.io/mk0e/ccbox:latest &>/dev/null; then
+        info ""
+        prompt "Remove the local ccbox container image too? [y/N] "
+        case "$REPLY" in
+            [yY]*)
+                "$RUNTIME" rmi ghcr.io/mk0e/ccbox:latest >/dev/null 2>&1 \
+                    && info "Image removed." \
+                    || info "Could not remove image (it may be in use)."
+                ;;
+        esac
+    fi
     info ""
     info "ccbox removed. Close this terminal and open a new one."
 }
