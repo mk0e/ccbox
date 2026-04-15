@@ -375,6 +375,22 @@ build_local_image() {
     info "Build complete."
 }
 
+# ---------- Pre-pull image ----------
+pre_pull_image() {
+    if "$RUNTIME" image inspect ghcr.io/mk0e/ccbox:latest &>/dev/null; then
+        return 0
+    fi
+    info ""
+    info "Pulling ccbox image (one-time, ~4 GB)..."
+    if "$RUNTIME" pull ghcr.io/mk0e/ccbox:latest > /dev/tty 2>&1; then
+        info "Image pulled."
+    else
+        info ""
+        info "Warning: could not pull ccbox image (offline or registry unavailable)."
+        info "Install will continue. The image will be pulled on first 'ccbox' run."
+    fi
+}
+
 # ---------- Uninstall ----------
 do_uninstall() {
     info ""
@@ -454,7 +470,11 @@ do_first_run() {
 detect_runtime
 detect_shell
 
-$BUILD_LOCAL && build_local_image
+if $BUILD_LOCAL; then
+    build_local_image
+else
+    pre_pull_image
+fi
 
 is_installed=false
 if [ "$CURRENT_SHELL" = "fish" ]; then
