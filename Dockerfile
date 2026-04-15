@@ -15,7 +15,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=en_US.UTF-8
 
 # ---------- Minimal system packages (shared by every variant) ----------
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# docker-clean ships an APT post-invoke hook that fails inside non-privileged
+# dind (GitLab shared runners) — remove it so apt operations don't trip on it.
+RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     locales \
