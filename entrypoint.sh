@@ -15,9 +15,9 @@ CURRENT_UID="$(id -u)"
 try_chown() { chown "$@" 2>/dev/null || true; }
 
 # ---------- Root-mode setup (Docker / rootful Podman) ----------
-# When started by rootless Podman with --userns=keep-id, PID 1 is already the
-# claude user (UID 1000) and we skip all of this. See Task 2/3 for how the
-# launcher chooses keep-id.
+# When started by rootless Podman with --userns=keep-id:uid=1000,gid=1000,
+# PID 1 is already the claude user (UID 1000) and we skip all of this. The
+# shell launcher in install.sh passes --userns=keep-id in that case.
 if [ "$CURRENT_UID" = "0" ]; then
     PUID="${PUID:-1000}"
     PGID="${PGID:-1000}"
