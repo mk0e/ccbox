@@ -138,9 +138,13 @@ PYEOF
     echo "[ccbox] Starting web UI..."
     export HOME="$CLAUDE_HOME"
     cd /workspace
+    # code-server spawns tsserver/npm/etc as child node processes; the global
+    # --require node_path_fix.js leaks into them and corrupts tsserver's
+    # line-delimited JSON protocol whenever /workspace has a package.json.
+    unset NODE_OPTIONS
     if [ "$CURRENT_UID" = "0" ]; then
         exec sudo -u claude \
-            --preserve-env=HOME,PATH,NODE_PATH,NODE_OPTIONS,ANTHROPIC_API_KEY,ANTHROPIC_BASE_URL,CLAUDE_CODE_USE_BEDROCK,AWS_PROFILE,AWS_REGION,CLAUDE_CODE_USE_VERTEX,GOOGLE_CLOUD_PROJECT \
+            --preserve-env=HOME,PATH,NODE_PATH,ANTHROPIC_API_KEY,ANTHROPIC_BASE_URL,CLAUDE_CODE_USE_BEDROCK,AWS_PROFILE,AWS_REGION,CLAUDE_CODE_USE_VERTEX,GOOGLE_CLOUD_PROJECT \
             code-server \
             --bind-addr 0.0.0.0:8080 \
             --auth none \
