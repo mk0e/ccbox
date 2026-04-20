@@ -1,40 +1,64 @@
 # ccbox
 
-Create professional documents with AI — PDFs, presentations, spreadsheets, and Word documents — by describing what you need in plain language.
+Create professional documents with AI (PDFs, presentations, spreadsheets, and Word documents) by describing what you need in plain language.
 
-ccbox runs [Claude Code](https://docs.anthropic.com/en/docs/claude-code) inside a Docker container with all the tools pre-installed for document generation. No setup, no dependencies to install — just describe what you want and get polished documents back.
+## What is ccbox?
+
+ccbox is a **ready-to-use AI workstation for documents**, packaged as a Docker container.
+
+Inside the container runs [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Anthropic's AI coding assistant, together with everything it needs to produce polished office documents: LibreOffice, Pandoc, Tesseract OCR, plus Python and Node libraries for PDFs, Word, Excel, and PowerPoint. You describe what you want in plain English, and Claude writes and runs the code to build the file.
+
+You don't install any of those tools on your own machine. You just install one small shell command (`ccbox`) that starts the container for you.
 
 ## Quick start
 
-**Install:**
+### 1. Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mk0e/ccbox/main/install.sh | bash
 ```
 
-The installer sets up the `ccbox` command and walks you through authentication. You'll need Docker (or Podman) running.
+You'll need Docker (or Podman) installed and running first.
 
-**Use from terminal:**
+The installer is a small, local setup script. It does **not** install any heavy software on your machine. It:
+
+- **Checks** that Docker or Podman is installed and running.
+- **Adds a `ccbox` function** to your shell config (`.zshrc`, `.bashrc`, or fish functions). This is how typing `ccbox` works. It's a short shell wrapper that runs the container for you.
+- **Asks how you want to sign in**, either with an Anthropic API key (stored locally in `~/.config/ccbox/auth.env`, `chmod 600`) or with your Claude account (Pro, Team, Enterprise, or free tier; you log in the first time you launch).
+- **Creates `~/.ccbox/`** on your machine. This folder keeps your Claude sessions, settings, and shared templates across container restarts.
+
+That's it. No system packages installed, no background services, no daemon. The container image itself is only downloaded the first time you actually run `ccbox`.
+
+Run `./install.sh` again any time to update the command, change auth, or uninstall.
+
+### 2. The workspace folder (the most important idea)
+
+**ccbox always works on the folder you start it from.** That folder is called your *workspace*.
+
+When you type `ccbox`, the current folder (`pwd`) is mounted into the container as `/workspace`. Anything Claude creates, edits, or reads happens in that folder on your real machine. Nothing outside it is visible to Claude.
+
+Concrete example:
 
 ```bash
-ccbox
+cd ~/Documents/q1-report     # go to the folder you want to work in
+ccbox                        # this folder becomes Claude's workspace
 ```
 
-Opens an interactive Claude Code session. Ask it to create documents:
+Inside that session, if you say *"create a PDF summary of sales.xlsx"*, Claude reads `sales.xlsx` from `~/Documents/q1-report` and writes the new PDF right back into `~/Documents/q1-report`. When you exit, the files are simply there. No export step.
 
-```
-> Create a PDF report with Q1 sales charts and an executive summary
-> Make a 10-slide pitch deck for a startup called Acme AI
-> Build an Excel budget tracker with monthly columns and formulas
-```
+Rule of thumb: **`cd` into the folder where you want the finished document to end up, then run `ccbox`.**
 
-**Use from browser:**
+### 3. Two ways to use it: browser or terminal
+
+Both start the same container on the same workspace folder. The only difference is the interface you interact with. Pick whichever matches your comfort level.
+
+**Browser mode: `ccbox web`** (recommended if you don't live in the terminal)
 
 ```bash
 ccbox web
 ```
 
-Opens a browser-based interface at `http://localhost:8080` with a visual editor, file explorer, and Claude Code chat panel. Same capabilities, more visual.
+Opens a full **VS Code in your browser** at `http://localhost:8080`, with a file tree, editor, and a Claude Code chat panel side by side. This is the friendliest option. You can see your files, preview documents, and chat with Claude all in one window. No terminal experience needed beyond running the one command above.
 
 Use a custom port if 8080 is taken:
 
@@ -42,44 +66,42 @@ Use a custom port if 8080 is taken:
 ccbox web 3000
 ```
 
-**Stop the web interface:**
+To end the session, press **Ctrl+C** in the terminal where you started it. (If you closed that terminal or the container got stuck, `ccbox stop` from any terminal will shut it down, but you usually won't need it.)
+
+**Terminal mode: `ccbox`** (for users comfortable with the Claude Code CLI)
 
 ```bash
-ccbox stop
+ccbox
 ```
 
-**Exposing dev server ports:**
+Drops you straight into an interactive [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI session inside the container, the same interface you'd get running `claude` locally, just with document tools preinstalled. Type `/exit` inside the CLI to leave the session.
 
-`ccbox web` also publishes host ports `4200–4250` into the container, so you can run a frontend dev server (e.g. `ng serve`, Vite) inside ccbox and reach it from your host browser at `http://localhost:4200`. Bind servers to `0.0.0.0` inside the container (e.g. `ng serve --host 0.0.0.0`) — the default `localhost` bind is not reachable from outside the container.
-
-## How it works
+Typical requests:
 
 ```
-You describe a document
-        ↓
-Claude Code creates it using built-in skills and tools
-        ↓
-The finished file appears in your current directory
+> Create a PDF report with Q1 sales charts and an executive summary
+> Make a 10-slide pitch deck for a startup called Acme AI
+> Build an Excel budget tracker with monthly columns and formulas
 ```
 
-ccbox mounts your current directory into the container. Files Claude creates show up right where you ran the command.
+**At a glance:**
 
-## Two ways to interact
-
-| | Terminal (`ccbox`) | Browser (`ccbox web`) |
+| | Browser (`ccbox web`) | Terminal (`ccbox`) |
 |---|---|---|
-| **Interface** | Claude Code CLI in your terminal | VS Code in browser with Claude Code extension |
-| **Best for** | Quick tasks, scripting, power users | Visual work, previewing documents, casual users |
-| **File access** | Current directory mounted at `/workspace` | Same — visible in the file explorer |
-| **Auth** | API key or Claude account | Same — configured once via installer |
+| **Audience** | Less technical users who want a visual interface | Users already comfortable with the Claude Code CLI |
+| **Interface** | VS Code in the browser (editor, file tree, chat panel) | Claude Code CLI in your terminal |
+| **Exit with** | Ctrl+C in the starting terminal | `/exit` inside the CLI |
+| **Best for** | Previewing, tweaking, and iterating on files visually | Quick keyboard-driven requests or scripting |
+| **Workspace** | The folder you ran `ccbox` in, mounted inside the container at `/workspace` | Same |
+| **Auth** | Same login, configured once by the installer | Same |
 
-Both modes use the same container image and the same tools.
+**Dev server ports (optional):** `ccbox web` also forwards host ports `4200–4250` into the container, so if Claude spins up a frontend dev server (Vite, `ng serve`, etc.) you can open it at `http://localhost:4200`. Bind inside the container to `0.0.0.0` (e.g. `ng serve --host 0.0.0.0`). `localhost` alone isn't reachable from outside.
 
-## What's inside
+## What's inside the container
 
 ### Skills
 
-ccbox comes with 10 built-in skills that Claude uses automatically:
+ccbox ships with 10 built-in skills that Claude uses automatically:
 
 | Skill | What it does |
 |-------|-------------|
@@ -104,23 +126,15 @@ ccbox comes with 10 built-in skills that Claude uses automatically:
 
 ## Templates
 
-Place your company templates so Claude uses them automatically:
+Drop a `templates/` folder inside your workspace folder (the one you ran `ccbox` from):
 
-**Per-project** (in your workspace):
 ```
-my-project/templates/
+templates/
 ├── company.pptx
 └── report.docx
 ```
 
-**Shared** (available in all sessions):
-```
-~/.ccbox/templates/
-├── company.pptx
-└── report.docx
-```
-
-When Claude creates a document, it checks both locations and uses matching templates to preserve your branding, layouts, and styles.
+Claude picks these up automatically when creating new documents, so your branding, layouts, and styles are preserved.
 
 ## Resume and one-shot
 
